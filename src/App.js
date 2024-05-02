@@ -15,7 +15,9 @@ function App() {
   useEffect(() => {
     const fetchLanguages = async () => {
       try {
-        const response = await axios.get("http://localhost:3000/languages");
+        const response = await axios.get(
+          `${process.env.REACT_APP_API_URL}languages`
+        );
         setLanguages(response.data.languages);
         setSelectedLanguage(response.data.languages[0]);
       } catch (error) {
@@ -52,11 +54,15 @@ function App() {
     formData.append("language", selectedLanguage);
 
     try {
-      const response = await axios.post("http://localhost:3000/ocr", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}ocr`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
       if (response.status === 200) {
         setOcrText(response.data.OCRText);
       } else {
