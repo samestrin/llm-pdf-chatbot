@@ -131,3 +131,4 @@ dist
 
 # private plans (samestrin/llm-pdf-chatbot-planning)
 .planning/
+.coverage

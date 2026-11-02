@@ -138,6 +138,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
@@ -152,6 +153,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
