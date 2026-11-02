@@ -1,0 +1,21 @@
+name: compose smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: compose-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-smoke:
+    # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.
+    runs-on: [self-hosted, gauntlet]
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: pdf-chatbot-smoke-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/compose-smoke.sh
