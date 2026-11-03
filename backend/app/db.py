@@ -4,6 +4,7 @@ Every table that hangs off a document references it with `ON DELETE CASCADE`,
 so deleting the document row removes everything derived from it.
 """
 
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     JSON,
     CheckConstraint,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Engine,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     MetaData,
     String,
@@ -19,7 +21,17 @@ from sqlalchemy import (
     Text,
     event,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
+
+# Postgres is the real store. SQLite keeps the same tables for quick local tests: a vector
+# is a JSON list there, and the "tsvector" is the plain chunk text, with no keyword index.
+Embedding = VECTOR().with_variant(JSON(), "sqlite")
+SearchVector = TSVECTOR().with_variant(Text(), "sqlite")
+TEXT_SEARCH_CONFIG = "english"
+
+INGESTION_STATES = ("queued", "processing", "ready", "failed")
 
 metadata = MetaData()
 
@@ -90,6 +102,61 @@ chunks = Table(
 )
 
 
+# One row per uploaded document: where its ingestion is, and how far it has got. The worker
+# updates it after reading the pages and after every embedding batch.
+ingestion_status = Table(
+    "ingestion_status",
+    metadata,
+    Column(
+        "document_id",
+        String(32),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("state", String(16), nullable=False),
+    Column("pages_total", Integer, nullable=False),
+    # Pages some method read text from; the rest are failed pages, listed in `pages`.
+    Column("pages_read", Integer, nullable=False, server_default="0"),
+    Column("chunks_total", Integer, nullable=False, server_default="0"),
+    Column("chunks_embedded", Integer, nullable=False, server_default="0"),
+    # Why the document failed, when `state` is failed.
+    Column("error", Text),
+    Column(
+        "updated_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    ),
+    CheckConstraint(
+        "state IN (" + ", ".join(f"'{s}'" for s in INGESTION_STATES) + ")",
+        name="ingestion_state",
+    ),
+)
+
+# A chunk's vector from the embedding model, for semantic search (pgvector).
+chunk_embeddings = Table(
+    "chunk_embeddings",
+    metadata,
+    Column("chunk_id", Integer, ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True),
+    Column("document_id", String(32), nullable=False, index=True),
+    # No fixed dimension: it is whatever the configured embedding model returns.
+    Column("embedding", Embedding, nullable=False),
+)
+
+# A chunk's text as a tsvector, for keyword search through the GIN index.
+chunk_text_search = Table(
+    "chunk_text_search",
+    metadata,
+    Column("chunk_id", Integer, ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True),
+    Column("document_id", String(32), nullable=False, index=True),
+    Column("tsv", SearchVector, nullable=False),
+)
+Index("chunk_text_search_tsv", chunk_text_search.c.tsv, postgresql_using="gin").ddl_if(
+    dialect="postgresql"
+)
+
+
 def _enable_sqlite_foreign_keys(dbapi_conn, _record) -> None:
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
@@ -103,4 +170,8 @@ def init_db(engine: Engine) -> None:
     ):
         event.listen(engine, "connect", _enable_sqlite_foreign_keys)
         engine.dispose()
+    if engine.dialect.name == "postgresql":
+        # Compose creates it in db/init; a bare Postgres (as in CI) needs it here.
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     metadata.create_all(engine)

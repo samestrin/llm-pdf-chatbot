@@ -29,11 +29,17 @@ def engine(tmp_path):
     return create_engine(f"sqlite:///{tmp_path}/test.db")
 
 
+class FakeEmbedder:
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, float(len(t))] for t in texts]
+
+
 @pytest.fixture
-def start(engine, upload_dir):
+def start(engine, upload_dir, monkeypatch):
     """Start the app after a test has set its environment; entering runs startup (schema)."""
+    monkeypatch.delenv("OCR_URL", raising=False)
     with ExitStack() as stack:
-        yield lambda: stack.enter_context(TestClient(create_app(engine)))
+        yield lambda: stack.enter_context(TestClient(create_app(engine, embedder=FakeEmbedder())))
 
 
 @pytest.fixture
@@ -136,6 +142,8 @@ def test_failed_insert_leaves_no_file(client, engine, upload_dir):
 
 def test_failed_commit_leaves_no_file(client, engine, upload_dir):
     upload(client, make_pdf())
+    # Let the first document's ingestion commit before the hook below starts failing commits.
+    client.app.state.worker.join()
 
     def fail_commit(conn):
         # Fail only the commit that follows the second file's move into place.
@@ -218,7 +226,7 @@ def test_delete_removes_file_and_row(client, engine, upload_dir):
 
 
 def test_delete_cascades_to_dependent_rows(client, engine):
-    # Chunks and vectors arrive in later tasks; a stand-in child table proves FKs are enforced.
+    # A stand-in child table proves FKs are enforced; test_ingest.py checks the real ones.
     with engine.begin() as conn:
         conn.execute(
             text(

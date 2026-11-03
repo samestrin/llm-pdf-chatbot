@@ -14,6 +14,22 @@ jobs:
     # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.
     runs-on: [self-hosted, gauntlet]
     timeout-minutes: 15
+    services:
+      # The Postgres tests fail without it; they never skip.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        # A host port Docker picks, so parallel jobs on the shared runner do not collide.
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     defaults:
       run:
         working-directory: backend
@@ -24,6 +40,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/test
 
   frontend:
     # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.

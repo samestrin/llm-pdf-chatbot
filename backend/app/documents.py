@@ -21,7 +21,7 @@ from fastapi import Path as PathParam
 from sqlalchemy import Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db import collections, documents
+from app.db import collections, documents, ingestion_status
 
 DEFAULT_UPLOAD_DIR = "./data/uploads"
 DEFAULT_MAX_UPLOAD_MB = 50
@@ -80,7 +80,8 @@ router = APIRouter()
     "/collections/{collection}/documents",
     status_code=201,
     description=(
-        "Upload a PDF into the named collection, creating the collection if it is new. "
+        "Upload a PDF into the named collection, creating the collection if it is new, and "
+        "queue it for ingestion (reading, keyword index, embeddings) in the background. "
         f"Non-PDF content and PDFs over the page limit return 422; files over the size limit "
         f"return 413. {NO_AUTH_NOTE}"
     ),
@@ -136,6 +137,11 @@ def upload_document(
                         page_count=pages,
                     )
                 )
+                conn.execute(
+                    insert(ingestion_status).values(
+                        document_id=document_id, state="queued", pages_total=pages
+                    )
+                )
                 # Inside the transaction: if the rename fails, the row is rolled back.
                 tmp_path.replace(final_path)
         except BaseException:
@@ -145,12 +151,14 @@ def upload_document(
     finally:
         tmp_path.unlink(missing_ok=True)
 
+    request.app.state.worker.submit(document_id)
     return {
         "id": document_id,
         "collection": collection,
         "filename": filename,
         "pages": pages,
         "size_bytes": size,
+        "status": "queued",
     }
 
 

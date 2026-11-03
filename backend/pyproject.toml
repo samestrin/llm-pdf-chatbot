@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "httpx",
+    "pgvector>=0.5.1",
     "psycopg[binary]",
     "pymupdf",
     "python-multipart",
