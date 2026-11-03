@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compose smoke test: build and start the whole stack with one `docker compose up`,
 # then check that the backend health check passes against Postgres, that pgvector
-# is installed, and that the frontend serves the page.
+# is installed, that the frontend serves the page, and that the frontend's nginx
+# proxies /api to the backend.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -65,5 +66,11 @@ script=$(echo "$page" | grep -o 'src="/assets/[^"]*\.js"' | head -n1 | cut -d'"'
 curl -sSf -o /dev/null "http://localhost:${FRONTEND_PORT}${script}" \
   || fail "GET ${script} failed"
 echo "page and ${script} served"
+
+echo "--- GET /api/health through the frontend (nginx proxy)"
+proxied=$(curl -sSf "http://localhost:${FRONTEND_PORT}/api/health") \
+  || fail "GET /api/health through the frontend failed"
+echo "$proxied"
+[ "$proxied" = '{"status":"ok"}' ] || fail "proxied /api/health body was $proxied"
 
 echo "compose smoke test passed"
