@@ -263,3 +263,218 @@ def test_route_docs_state_there_is_no_auth(client):
         ("/documents/{document_id}", "delete"),
     ]:
         assert "no auth" in schema["paths"][path][method]["description"].lower()
+
+
+# Read API: the collection list, the stored PDF, and page text.
+
+
+@pytest.fixture
+def any_db_client(db_engine, upload_dir, monkeypatch):
+    """`client`, on SQLite and on Postgres."""
+    monkeypatch.delenv("OCR_URL", raising=False)
+    with TestClient(create_app(db_engine, embedder=FakeEmbedder())) as client:
+        yield client
+
+
+STATUS_FIELDS = {
+    "state",
+    "error",
+    "pages_total",
+    "pages_read",
+    "pages_failed",
+    "chunks_total",
+    "chunks_embedded",
+    "updated_at",
+    "pages",
+    "failures",
+}
+
+
+def test_list_collections_with_their_documents_and_status(any_db_client):
+    client = any_db_client
+    a = upload(client, make_pdf(pages=2), filename="a.pdf", collection="papers").json()
+    b = upload(client, make_pdf(), filename="b.pdf", collection="papers").json()
+    c = upload(client, make_pdf(), filename="c.pdf", collection="notes").json()
+    client.app.state.worker.join()
+
+    resp = client.get("/collections")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [col["name"] for col in body] == ["notes", "papers"]
+    notes, papers = body
+    assert [d["id"] for d in notes["documents"]] == [c["id"]]
+    assert {d["id"] for d in papers["documents"]} == {a["id"], b["id"]}
+    doc_a = next(d for d in papers["documents"] if d["id"] == a["id"])
+    assert (doc_a["filename"], doc_a["pages"], doc_a["size_bytes"]) == ("a.pdf", 2, a["size_bytes"])
+    # The same status fields as GET /documents/{id}/status, under `status`.
+    assert set(doc_a["status"]) == STATUS_FIELDS
+    expected = client.get(f"/documents/{a['id']}/status").json()
+    assert doc_a["status"] == {k: expected[k] for k in STATUS_FIELDS}
+    assert doc_a["status"]["state"] == "ready"
+    assert [p["method"] for p in doc_a["status"]["pages"]] == ["pymupdf", "pymupdf"]
+
+
+def test_list_shows_failed_pages_per_document(client):
+    good = upload(client, make_pdf()).json()
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "readable")
+    doc.new_page()  # No text layer and no OCR: nothing reads it.
+    partly = upload(client, doc.tobytes(), filename="partly.pdf").json()
+    client.app.state.worker.join()
+
+    (papers,) = client.get("/collections").json()
+
+    by_id = {d["id"]: d["status"] for d in papers["documents"]}
+    assert by_id[good["id"]]["failures"] == []
+    assert by_id[partly["id"]]["state"] == "ready"
+    assert by_id[partly["id"]]["pages_failed"] == 1
+    assert [f["page"] for f in by_id[partly["id"]]["failures"]] == [2]
+
+
+def test_list_keeps_a_collection_whose_documents_were_deleted(client):
+    doc_id = upload(client, make_pdf()).json()["id"]
+    client.app.state.worker.join()
+    client.delete(f"/documents/{doc_id}")
+
+    (papers,) = client.get("/collections").json()
+
+    assert papers["name"] == "papers"
+    assert papers["documents"] == []
+
+
+def test_list_is_empty_with_no_collections(client):
+    assert client.get("/collections").json() == []
+
+
+def test_pdf_is_served_inline_with_its_bytes_and_headers(client):
+    data = make_pdf(pages=2)
+    doc_id = upload(client, data, filename="report.pdf").json()["id"]
+
+    resp = client.get(f"/documents/{doc_id}/pdf")
+
+    assert resp.status_code == 200
+    assert resp.content == data
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["content-disposition"].startswith("inline")
+    assert 'filename="report.pdf"' in resp.headers["content-disposition"]
+
+
+def test_pdf_of_unknown_document_is_404(client):
+    upload(client, make_pdf())
+
+    resp = client.get(f"/documents/{'0' * 32}/pdf")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "document not found"}
+
+
+@pytest.mark.parametrize(
+    "document_id",
+    [
+        "..",
+        "..%2F..%2Fetc%2Fpasswd",
+        "%2E%2E%2Fsecret",
+        "..%5Csecret",
+        "%2Fetc%2Fpasswd",
+        "secret",
+        "secret.pdf",
+    ],
+)
+def test_pdf_path_like_id_is_404_and_never_reads_the_path(client, upload_dir, document_id):
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Files a path-like id could reach if it were ever joined onto the upload directory.
+    (upload_dir / "secret.pdf").write_bytes(b"%PDF-secret")
+    (upload_dir / "secret").write_bytes(b"%PDF-secret")
+    (upload_dir.parent / "secret.pdf").write_bytes(b"%PDF-secret")
+
+    resp = client.get(f"/documents/{document_id}/pdf")
+
+    assert resp.status_code == 404
+    assert b"secret" not in resp.content
+
+
+def test_pdf_whose_file_is_gone_is_404(client, upload_dir):
+    doc_id = upload(client, make_pdf()).json()["id"]
+    client.app.state.worker.join()
+    (upload_dir / f"{doc_id}.pdf").unlink()
+
+    resp = client.get(f"/documents/{doc_id}/pdf")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "file not found"}
+
+
+def test_page_text_is_the_stored_text_chunk_offsets_index(client, engine):
+    doc_id = upload(client, make_pdf(pages=2)).json()["id"]
+    client.app.state.worker.join()
+
+    resp = client.get(f"/documents/{doc_id}/pages/2")
+
+    assert resp.status_code == 200
+    with engine.connect() as conn:
+        stored = conn.execute(
+            text("SELECT text FROM pages WHERE document_id = :d AND page = 2"), {"d": doc_id}
+        ).scalar_one()
+    assert "page 2" in stored
+    assert resp.json() == {
+        "document_id": doc_id,
+        "page": 2,
+        "text": stored,
+        "method": "pymupdf",
+        "error": None,
+    }
+
+
+def test_failed_page_has_null_text_and_its_reason(client):
+    doc = pymupdf.open()
+    doc.new_page()
+    doc_id = upload(client, doc.tobytes()).json()["id"]
+    client.app.state.worker.join()
+
+    body = client.get(f"/documents/{doc_id}/pages/1").json()
+
+    assert body["text"] is None
+    assert body["error"] == "page has no text layer"
+
+
+@pytest.mark.parametrize("page", [0, 3, -1])
+def test_page_outside_the_document_is_404(client, page):
+    doc_id = upload(client, make_pdf(pages=2)).json()["id"]
+    client.app.state.worker.join()
+
+    resp = client.get(f"/documents/{doc_id}/pages/{page}")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "page not found"}
+
+
+def test_page_of_unknown_document_is_404(client):
+    resp = client.get(f"/documents/{'0' * 32}/pages/1")
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "document not found"}
+
+
+def test_page_not_read_yet_is_409(client, engine):
+    doc_id = upload(client, make_pdf()).json()["id"]
+    client.app.state.worker.join()
+    # As before the worker reads the document: no page rows yet.
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM pages WHERE document_id = :d"), {"d": doc_id})
+
+    resp = client.get(f"/documents/{doc_id}/pages/1")
+
+    assert resp.status_code == 409
+    assert resp.json() == {"detail": "page has not been read yet"}
+
+
+def test_read_route_docs_state_there_is_no_auth(client):
+    schema = client.get("/openapi.json").json()
+    for path in [
+        "/collections",
+        "/documents/{document_id}/pdf",
+        "/documents/{document_id}/pages/{page}",
+    ]:
+        assert "no auth" in schema["paths"][path]["get"]["description"].lower()

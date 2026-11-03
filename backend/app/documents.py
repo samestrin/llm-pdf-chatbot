@@ -1,4 +1,4 @@
-"""Upload PDFs, report their ingestion status, and delete them.
+"""Upload PDFs, report their ingestion status, read them back, and delete them.
 
 There is no auth on these routes: the app is local and single-user.
 
@@ -18,6 +18,7 @@ from typing import Annotated
 import pymupdf
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParam
+from fastapi.responses import FileResponse
 from sqlalchemy import Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
@@ -183,20 +184,29 @@ def document_status(request: Request, document_id: str) -> dict:
         if row is None:
             raise HTTPException(404, "document not found")
         page_rows = conn.execute(
-            select(
-                page_table.c.page, page_table.c.method, page_table.c.ocr_error, page_table.c.error
-            )
-            .where(page_table.c.document_id == document_id)
-            .order_by(page_table.c.page)
+            _page_status_query().where(page_table.c.document_id == document_id)
         ).all()
+    return {"id": document_id, "filename": row.filename, **status_fields(row, page_rows)}
+
+
+def _page_status_query():
+    return select(
+        page_table.c.document_id,
+        page_table.c.page,
+        page_table.c.method,
+        page_table.c.ocr_error,
+        page_table.c.error,
+    ).order_by(page_table.c.document_id, page_table.c.page)
+
+
+def status_fields(row, page_rows) -> dict:
+    """The status of one document from its `ingestion_status` row and its page rows."""
     failures = [
         {"page": p.page, "reason": p.error, "ocr_error": p.ocr_error}
         for p in page_rows
         if p.error is not None
     ]
     return {
-        "id": document_id,
-        "filename": row.filename,
         "state": row.state,
         "error": row.error,
         "pages_total": row.pages_total,
@@ -210,6 +220,120 @@ def document_status(request: Request, document_id: str) -> dict:
             for p in page_rows
         ],
         "failures": failures,
+    }
+
+
+@router.get(
+    "/collections",
+    description=(
+        "Every collection by name, each with its documents in upload order. A document has "
+        "its display file name, page count, size and, under `status`, the same status fields "
+        "as `GET /documents/{document_id}/status`. A collection whose documents were all "
+        f"deleted is listed with none. {NO_AUTH_NOTE}"
+    ),
+)
+def list_collections(request: Request) -> list[dict]:
+    with request.app.state.engine.connect() as conn:
+        collection_rows = conn.execute(
+            select(collections.c.id, collections.c.name).order_by(collections.c.name)
+        ).all()
+        document_rows = conn.execute(
+            select(
+                documents.c.id,
+                documents.c.collection_id,
+                documents.c.filename,
+                documents.c.page_count,
+                documents.c.size_bytes,
+                documents.c.created_at,
+                ingestion_status,
+            )
+            .join(ingestion_status, ingestion_status.c.document_id == documents.c.id)
+            .order_by(documents.c.created_at, documents.c.id)
+        ).all()
+        page_rows = conn.execute(_page_status_query()).all()
+
+    pages_by_document: dict[str, list] = {}
+    for p in page_rows:
+        pages_by_document.setdefault(p.document_id, []).append(p)
+    documents_by_collection: dict[int, list[dict]] = {}
+    for d in document_rows:
+        documents_by_collection.setdefault(d.collection_id, []).append(
+            {
+                "id": d.id,
+                "filename": d.filename,
+                "pages": d.page_count,
+                "size_bytes": d.size_bytes,
+                "created_at": d.created_at,
+                "status": status_fields(d, pages_by_document.get(d.id, [])),
+            }
+        )
+    return [
+        {"id": c.id, "name": c.name, "documents": documents_by_collection.get(c.id, [])}
+        for c in collection_rows
+    ]
+
+
+@router.get(
+    "/documents/{document_id}/pdf",
+    response_class=FileResponse,
+    responses={200: {"content": {"application/pdf": {}}}},
+    description=(
+        "The stored PDF, inline (`application/pdf`, `X-Content-Type-Options: nosniff`), for "
+        "the browser's PDF viewer. The id is the one the server generated at upload; any "
+        f"other id, path-like or not, returns 404. {NO_AUTH_NOTE}"
+    ),
+)
+def document_pdf(request: Request, document_id: str) -> FileResponse:
+    with request.app.state.engine.connect() as conn:
+        filename = conn.execute(
+            select(documents.c.filename).where(documents.c.id == document_id)
+        ).scalar()
+    if filename is None:
+        raise HTTPException(404, "document not found")
+    # The id matched a row, so it is one we generated and safe in a path.
+    path = stored_path(request.app.state.limits, document_id)
+    if not path.is_file():
+        raise HTTPException(404, "file not found")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=filename,
+        content_disposition_type="inline",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get(
+    "/documents/{document_id}/pages/{page}",
+    description=(
+        "One page's stored text (pages count from 1): the exact text that chunk offsets and "
+        "so citations index into, with the method that read it. A page no method could read "
+        "has `text` null and the reason in `error`. A page outside the document returns 404; "
+        f"a page the worker has not read yet returns 409. {NO_AUTH_NOTE}"
+    ),
+)
+def document_page(request: Request, document_id: str, page: int) -> dict:
+    with request.app.state.engine.connect() as conn:
+        page_count = conn.execute(
+            select(documents.c.page_count).where(documents.c.id == document_id)
+        ).scalar()
+        if page_count is None:
+            raise HTTPException(404, "document not found")
+        if not 1 <= page <= page_count:
+            raise HTTPException(404, "page not found")
+        row = conn.execute(
+            select(page_table.c.text, page_table.c.method, page_table.c.error).where(
+                page_table.c.document_id == document_id, page_table.c.page == page
+            )
+        ).first()
+    if row is None:
+        raise HTTPException(409, "page has not been read yet")
+    return {
+        "document_id": document_id,
+        "page": page,
+        "text": row.text,
+        "method": row.method,
+        "error": row.error,
     }
 
 
