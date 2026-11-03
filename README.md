@@ -50,7 +50,10 @@ Everything is an environment variable that `docker compose` reads from your shel
 | `LLM_FAST_MODEL` | Model for quick steps |
 | `LLM_REASONING_MODEL` | Model for answering |
 | `LLM_EMBEDDING_MODEL` | Model for embeddings |
+| `LLM_TIMEOUT_SECONDS` | Seconds to wait for a model call; empty means 60 |
+| `EMBED_BATCH_SIZE` | Chunks per embedding call; empty means 64 |
 | `OCR_URL` | URL of an `llm-pdf-ocr-api` service for scanned pages; empty means no OCR |
+| `RERANK_URL`, `RERANK_MODEL`, `RERANK_API_KEY`, `RERANK_TIMEOUT_SECONDS` | Optional rerank endpoint, its model and key, and its timeout (default 30 seconds); empty `RERANK_URL` means no rerank (see [Retrieval](#retrieval)) |
 | `REFUSAL_MIN_SIMILARITY` | A question whose nearest passage has a lower cosine similarity (0 to 1) is refused as "not in your documents" without asking the model; empty means 0.3 |
 | `CHAT_HISTORY_TURNS` | How many earlier turns of the conversation go to the model with each question (0 sends none); empty means 6 |
 | `LLM_PRICE_FAST_PER_MTOK_IN`, `LLM_PRICE_FAST_PER_MTOK_OUT` | Fast-model prices per million input and output tokens, for the cost of each answer (see [Model prices](#model-prices)); empty means the cost is `null` |

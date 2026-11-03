@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -81,3 +82,69 @@ def test_compose_passes_the_answer_settings_to_the_backend():
     compose = (REPO / "docker-compose.yml").read_text()
     for name in ANSWER_VARS:
         assert f"{name}: ${{{name}:-}}" in compose, name
+
+
+# Every variable the README documents in backticks reaches the backend through compose,
+# except these, which compose itself uses (the db service and the published ports).
+COMPOSE_LEVEL_VARS = {
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "BACKEND_PORT",
+    "FRONTEND_PORT",
+}
+
+
+def readme_variables():
+    readme = (REPO / "README.md").read_text()
+    return set(re.findall(r"`([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)`", readme)) - COMPOSE_LEVEL_VARS
+
+
+def compose_backend_environment_names():
+    compose = (REPO / "docker-compose.yml").read_text()
+    backend = re.search(r"^  backend:\n(.*?)(?=^  \S)", compose, re.MULTILINE | re.DOTALL).group(1)
+    environment = re.search(r"^    environment:\n((?:^      .*\n)+)", backend, re.MULTILINE).group(
+        1
+    )
+    return set(re.findall(r"^      ([A-Z][A-Z0-9_]*):", environment, re.MULTILINE))
+
+
+def test_readme_documents_variables():
+    # Guards the test below against a README pattern that finds nothing.
+    assert {"LLM_BASE_URL", "RERANK_URL", "LLM_TIMEOUT_SECONDS"} <= readme_variables()
+
+
+def test_compose_passes_every_readme_documented_variable_to_the_backend():
+    missing = readme_variables() - compose_backend_environment_names()
+    assert not missing, sorted(missing)
+
+
+# Optional settings of the model client and the reranker: empty unless set.
+CLIENT_VARS = [
+    "LLM_TIMEOUT_SECONDS",
+    "EMBED_BATCH_SIZE",
+    "RERANK_URL",
+    "RERANK_MODEL",
+    "RERANK_API_KEY",
+    "RERANK_TIMEOUT_SECONDS",
+]
+
+
+def test_compose_passes_the_client_settings_empty_by_default():
+    compose = (REPO / "docker-compose.yml").read_text()
+    for name in CLIENT_VARS:
+        assert f"{name}: ${{{name}:-}}" in compose, name
+
+
+@needs_docker
+def test_backend_receives_the_client_settings_from_the_environment():
+    values = {name: f"value-{name}" for name in CLIENT_VARS}
+    environment = compose_backend_env(values)
+    for name, value in values.items():
+        assert environment[name] == value
+
+
+def test_env_example_lists_the_client_settings():
+    lines = (REPO / ".env.example").read_text().splitlines()
+    names = {line.lstrip("# ").split("=", 1)[0] for line in lines if "=" in line}
+    assert set(CLIENT_VARS) <= names
