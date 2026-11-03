@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react'
 import { streamChat, type ChatEvent, type ClaimEvent, type DoneEvent } from './api'
+
+// pdf.js is large; load the viewer the first time a citation is opened.
+const PdfViewer = lazy(() => import('./PdfViewer'))
 
 const DEFAULT_COLLECTION = 'default'
 
@@ -27,22 +30,24 @@ function apply(turn: Turn, event: ChatEvent): Turn {
   }
 }
 
-function Citation({ claim }: { claim: ClaimEvent }) {
+function Citation({ claim, onOpen }: { claim: ClaimEvent; onOpen: (c: ClaimEvent) => void }) {
   return (
     <span role="note" aria-label="Citation" className="citation-chip" title={claim.quote}>
-      {claim.document.filename}, p. {claim.page}
+      <button type="button" onClick={() => onOpen(claim)}>
+        {claim.document.filename}, p. {claim.page}
+      </button>
     </span>
   )
 }
 
-function Answer({ turn }: { turn: Turn }) {
+function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void }) {
   return (
     <article aria-label="Answer" aria-busy={turn.streaming}>
       {turn.claims.length > 0 && (
         <ul>
           {turn.claims.map((claim, i) => (
             <li key={i}>
-              {claim.text} <Citation claim={claim} />
+              {claim.text} <Citation claim={claim} onOpen={onOpen} />
             </li>
           ))}
         </ul>
@@ -58,6 +63,7 @@ export default function Chat({ collections }: { collections: string[] }) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
+  const [opened, setOpened] = useState<ClaimEvent | null>(null)
   const controller = useRef<AbortController | null>(null)
 
   useEffect(() => () => controller.current?.abort(), [])
@@ -105,9 +111,18 @@ export default function Chat({ collections }: { collections: string[] }) {
       {turns.map((turn, i) => (
         <div key={i}>
           <article aria-label="Question">{turn.question}</article>
-          <Answer turn={turn} />
+          <Answer turn={turn} onOpen={setOpened} />
         </div>
       ))}
+      {opened && (
+        <Suspense fallback={<p>Opening the PDF viewer…</p>}>
+          <PdfViewer
+            key={`${opened.chunk_id}:${opened.page}:${opened.quote}`}
+            citation={opened}
+            onClose={() => setOpened(null)}
+          />
+        </Suspense>
+      )}
       <form onSubmit={onAsk}>
         <label>
           Ask in collection{' '}

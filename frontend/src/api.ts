@@ -59,6 +59,11 @@ export async function listCollections(signal?: AbortSignal): Promise<Collection[
   return res.json()
 }
 
+/** The stored PDF, served inline by the server-generated document id. */
+export function documentPdfUrl(id: string): string {
+  return `${API_BASE}/documents/${encodeURIComponent(id)}/pdf`
+}
+
 export async function deleteDocument(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -104,6 +109,14 @@ export interface CitedDocument {
   filename: string
 }
 
+/** A rectangle on the page in PDF points, origin at the page's bottom-left. */
+export interface QuoteBox {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
 export interface ClaimEvent {
   type: 'claim'
   text: string
@@ -111,6 +124,8 @@ export interface ClaimEvent {
   page: number
   chunk_id: string
   quote: string
+  /** Where the quote is on the page, when the backend knows: drawn instead of a text search. */
+  boxes?: QuoteBox[]
 }
 
 export interface Passage {
