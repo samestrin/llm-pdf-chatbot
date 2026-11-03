@@ -1,4 +1,4 @@
-"""Upload and delete PDFs.
+"""Upload PDFs, report their ingestion status, and delete them.
 
 There is no auth on these routes: the app is local and single-user.
 
@@ -22,6 +22,7 @@ from sqlalchemy import Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import collections, documents, ingestion_status
+from app.db import pages as page_table
 
 DEFAULT_UPLOAD_DIR = "./data/uploads"
 DEFAULT_MAX_UPLOAD_MB = 50
@@ -159,6 +160,56 @@ def upload_document(
         "pages": pages,
         "size_bytes": size,
         "status": "queued",
+    }
+
+
+@router.get(
+    "/documents/{document_id}/status",
+    description=(
+        "Where a document's ingestion is: its state (`queued`, `processing`, `ready`, or "
+        "`failed` with the reason), how many pages were read, and, once its pages are read, "
+        "each page with the method that read it (`text_layer` or `tesseract` from OCR, "
+        "`pymupdf` from the text layer fallback) and why OCR failed on it, if it did. Pages "
+        f"no method could read are listed under `failures` with the reason. {NO_AUTH_NOTE}"
+    ),
+)
+def document_status(request: Request, document_id: str) -> dict:
+    with request.app.state.engine.connect() as conn:
+        row = conn.execute(
+            select(documents.c.filename, ingestion_status)
+            .join(ingestion_status, ingestion_status.c.document_id == documents.c.id)
+            .where(documents.c.id == document_id)
+        ).first()
+        if row is None:
+            raise HTTPException(404, "document not found")
+        page_rows = conn.execute(
+            select(
+                page_table.c.page, page_table.c.method, page_table.c.ocr_error, page_table.c.error
+            )
+            .where(page_table.c.document_id == document_id)
+            .order_by(page_table.c.page)
+        ).all()
+    failures = [
+        {"page": p.page, "reason": p.error, "ocr_error": p.ocr_error}
+        for p in page_rows
+        if p.error is not None
+    ]
+    return {
+        "id": document_id,
+        "filename": row.filename,
+        "state": row.state,
+        "error": row.error,
+        "pages_total": row.pages_total,
+        "pages_read": row.pages_read,
+        "pages_failed": len(failures),
+        "chunks_total": row.chunks_total,
+        "chunks_embedded": row.chunks_embedded,
+        "updated_at": row.updated_at,
+        "pages": [
+            {"page": p.page, "method": p.method, "ocr_error": p.ocr_error, "error": p.error}
+            for p in page_rows
+        ],
+        "failures": failures,
     }
 
 

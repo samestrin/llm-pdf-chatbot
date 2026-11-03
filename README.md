@@ -49,6 +49,8 @@ Each test works in a schema of its own and drops it afterwards.
 
 An uploaded PDF is queued and ingested in the background by a worker inside the backend: its pages are read, chunked, indexed for keyword search (Postgres full-text) and embedded through the configured embedding model (the model client needs `LLM_BASE_URL`, `LLM_FAST_MODEL`, `LLM_REASONING_MODEL` and `LLM_EMBEDDING_MODEL`, plus `LLM_API_KEY` when the endpoint wants one) into pgvector, `EMBED_BATCH_SIZE` chunks (default 64) per call. Each document's state (`queued`, `processing`, `ready`, `failed` with the reason) and progress are kept in the `ingestion_status` table. A document left `processing` when the backend stopped is marked failed on the next start; one still `queued` is ingested then.
 
+`GET /documents/{id}/status` reports a document's state and progress (pages read, chunks embedded), each page with the method that read it (`text_layer` or `tesseract` from OCR, `pymupdf` from the text-layer fallback) and why OCR failed on it, and under `failures` every page no method could read, with the reason. A document can be `ready` with some pages failed.
+
 ## Verify the stack
 
 ```bash
