@@ -2,17 +2,26 @@
 
 Chat with your own PDFs and get answers you can trust: every answer cites the quote and page it came from, and says plainly when the answer is not in your documents. See [VISION.md](VISION.md) for what this project is and what it will become.
 
-## Status
+## What it does
 
-Early foundation. The stack — FastAPI backend, React frontend, Postgres with pgvector — runs end to end today; document upload, retrieval, and grounded answering are being built on top of it.
+- Upload PDFs into a collection. Each one is read page by page (the text layer, or OCR for scanned pages), chunked, and indexed for keyword and vector search.
+- Ask a question in the chat. The answer streams in, and every claim carries a citation chip showing the document and page it came from.
+- Click a chip to open the stored PDF at that page with the quote highlighted (see [Citation viewer](#citation-viewer)). When the answer is not in your documents, it says so instead of guessing.
 
-## Requirements
+![Uploading a PDF and watching it ingest](docs/img/upload.png)
 
-- Docker with the Compose plugin (`docker compose version`)
+![A streamed answer with citation chips](docs/img/answer.png)
+
+![The cited answer, each claim with its citation chip](docs/img/citation.png)
+
+![The whole flow: upload, ask, read the cited answer](docs/img/demo.gif)
 
 ## Run it
 
+You need Docker with the Compose plugin (`docker compose version`).
+
 ```bash
+cp .env.example .env   # then edit the model settings, see Configuration
 docker compose up --build
 ```
 
@@ -30,7 +39,30 @@ To stop and remove the containers (keeping the database volume):
 docker compose down
 ```
 
-Configuration is through environment variables (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `BACKEND_PORT`, `FRONTEND_PORT`); see `docker-compose.yml` for the defaults.
+## Configuration
+
+Everything is an environment variable that `docker compose` reads from your shell or from `.env`. `.env.example` is the template.
+
+| Variable | Meaning |
+| --- | --- |
+| `LLM_BASE_URL` | Base URL of an OpenAI-compatible endpoint |
+| `LLM_API_KEY` | API key; leave empty for local servers |
+| `LLM_FAST_MODEL` | Model for quick steps |
+| `LLM_REASONING_MODEL` | Model for answering |
+| `LLM_EMBEDDING_MODEL` | Model for embeddings |
+| `OCR_URL` | URL of an `llm-pdf-ocr-api` service for scanned pages; empty means no OCR |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Database credentials (default `postgres`, `postgres`, `chatbot`) |
+| `BACKEND_PORT`, `FRONTEND_PORT` | Published ports (default 8000 and 8080) |
+
+**Local models.** The defaults in `.env.example` point at Ollama on the host (`http://host.docker.internal:11434/v1`) with `llama3.2`, `qwen3:14b` and `nomic-embed-text`; pull those models first. No key is needed.
+
+**Cloud models.** Replace the block with the commented cloud block in `.env.example`: set `LLM_BASE_URL` to `https://api.openai.com/v1`, `LLM_API_KEY` to your key, and the three model names.
+
+**OCR.** Set `OCR_URL` to a running `llm-pdf-ocr-api`; the backend sends it the whole PDF at `POST /v1/extract` and falls back to the PDF's own text layer for any page OCR did not read.
+
+## Evaluation
+
+The evaluation score table is not published yet: the committed question set and its scores will be added here when they land.
 
 ## Backend tests
 
