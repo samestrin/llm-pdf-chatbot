@@ -61,6 +61,14 @@ To have the cost of a fast-model call worked out, set `LLM_PRICE_FAST_PER_MTOK_I
 - `GET /documents/{id}/pdf` serves the stored PDF inline (`application/pdf`, `X-Content-Type-Options: nosniff`). Only an id the server generated at upload works; any other id returns 404, and the client's file name is never used as a path.
 - `GET /documents/{id}/pages/{page}` returns a page's stored text, which is the exact text that citation offsets index into. A page no method could read has `text` null and the reason in `error`.
 
+## Retrieval
+
+A question is answered from the passages of one collection, found in `backend/app/retrieval.py` by two searches over the chunks of its `ready` documents: by vector (cosine distance to the embedded question) and by keyword (Postgres full-text, any word of the question). The two rankings are combined by reciprocal rank fusion, so a passage both searches find ranks above one only a single search finds. Retrieval needs Postgres; it does not run on SQLite.
+
+Reranking is optional and runs on a separate HTTP service; no model is added to the backend image. Set `RERANK_URL` to the full URL of a rerank endpoint in the Cohere/Jina shape (it receives `{"query", "documents", "model"}` and answers `{"results": [{"index", "relevance_score"}]}`; a bare list of `{"index", "score"}`, as Text Embeddings Inference returns, works too). `RERANK_MODEL` and `RERANK_API_KEY` are sent when set, and `RERANK_TIMEOUT_SECONDS` defaults to 30. Without `RERANK_URL` the fusion order is used as is. When the endpoint fails (an error status, a timeout, or an answer that does not score every passage), retrieval raises an error; it never falls back to the fusion order without saying so.
+
+Each retrieval also reports `top_similarity`: the cosine similarity of the collection's nearest passage to the question, clamped to 0..1. Fusion and rerank scores cannot be compared from one question to the next, so this is the number a "not in your documents" threshold compares.
+
 ## Citation viewer
 
 Each claim in an answer has a citation chip (document, page). Clicking it opens that page of the stored PDF with pdf.js and highlights the quote. The quote is found by searching the page's pdf.js text layer, comparing letters and digits only (case, spacing, line breaks, hyphens, punctuation, ligatures and accents are ignored), because the stored page text the quote comes from may have been read by another extractor or by OCR. When the quote is not found, the page still opens, with a "Quote not located on this page." notice and the quote text beside it. If a claim carries `boxes` (rectangles in PDF points, origin at the page's bottom-left), those are drawn instead and no search is made.
