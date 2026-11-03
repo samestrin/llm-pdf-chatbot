@@ -20,13 +20,13 @@
 
 .pdf-viewer-notice {
   flex: 0 1 18rem;
-  border-left: 4px solid #c77700;
+  border-left: 4px solid var(--warn);
   padding-left: 0.75rem;
 }
 
 .pdf-page {
   position: relative;
-  box-shadow: 0 0 0 1px #ccc;
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 .pdf-page canvas {

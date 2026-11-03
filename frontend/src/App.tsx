@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import Chat from './Chat'
+import ThemeToggle from './ThemeToggle'
 import DocumentsPanel from './DocumentsPanel'
 import { getHealth, type Collection, type Health } from './api'
 
@@ -19,6 +20,7 @@ export default function App() {
 
   return (
     <main>
+      <ThemeToggle />
       <h1>LLM PDF Chatbot</h1>
       <p role="status">Backend: {health}</p>
       <Chat collections={collections} />

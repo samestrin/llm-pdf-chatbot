@@ -77,6 +77,10 @@ An answer the documents do not support is shown as "Not in your documents", with
 
 Each claim in an answer has a citation chip (document, page). Clicking it opens that page of the stored PDF with pdf.js and highlights the quote. The quote is found by searching the page's pdf.js text layer, comparing letters and digits only (case, spacing, line breaks, hyphens, punctuation, ligatures and accents are ignored), because the stored page text the quote comes from may have been read by another extractor or by OCR. When the quote is not found, the page still opens, with a "Quote not located on this page." notice and the quote text beside it. If a claim carries `boxes` (rectangles in PDF points, origin at the page's bottom-left), those are drawn instead and no search is made.
 
+## Themes
+
+The page follows the system light or dark scheme (`prefers-color-scheme`). The "Dark theme" button overrides it; the choice is saved in `localStorage` (key `theme`) and kept on reload. The layout fits a 375 px phone width without sideways scrolling.
+
 ## Verify the stack
 
 ```bash
