@@ -11,10 +11,14 @@ from test_retrieval import GLACIER, PAPERS, ZEBRAS, TopicEmbedder, add_document
 
 from app.answer import (
     ANSWER_SCHEMA,
+    DEFAULT_CHAT_HISTORY_TURNS,
     DEFAULT_REFUSAL_MIN_SIMILARITY,
+    HistoryConfigError,
     RefusalConfigError,
+    Turn,
     answer_events,
     build_messages,
+    chat_history_turns,
     refusal_min_similarity,
 )
 from app.db import init_db, pages
@@ -701,4 +705,239 @@ def test_chat_route_with_a_bad_refusal_threshold_ends_in_an_error_line(engine, s
     assert types(events) == ["error"]
     assert "REFUSAL_MIN_SIMILARITY" in events[0]["message"]
     assert server.requests == []
+    llm.close()
+
+
+# --- History, mode, and the model and cost of each answer ---
+
+
+def test_history_is_sent_as_the_turns_before_the_passages_and_question():
+    history = [Turn("What melted?", "The glacier."), Turn("Where?", "In the Alps.")]
+
+    messages = build_messages("How far did it retreat?", PASSAGES, history=history)
+
+    assert [m["role"] for m in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert [m["content"] for m in messages[1:5]] == [
+        "What melted?",
+        "The glacier.",
+        "Where?",
+        "In the Alps.",
+    ]
+    assert "<<<PASSAGE" in messages[-1]["content"]
+    assert messages[-1]["content"].rstrip().endswith("Question: How far did it retreat?")
+    assert not any("<<<PASSAGE" in m["content"] for m in messages[1:-1])
+
+
+def test_the_history_cap_has_a_committed_default_of_six_turns():
+    assert DEFAULT_CHAT_HISTORY_TURNS == 6
+    assert chat_history_turns({}) == 6
+    assert chat_history_turns({"CHAT_HISTORY_TURNS": "  "}) == 6
+
+
+@pytest.mark.parametrize("raw, value", [("2", 2), (" 0 ", 0), ("40", 40)])
+def test_the_history_cap_is_read_from_the_environment(raw, value):
+    assert chat_history_turns({"CHAT_HISTORY_TURNS": raw}) == value
+
+
+@pytest.mark.parametrize("raw", ["many", "-1", "2.5", "1e3"])
+def test_a_history_cap_that_is_not_a_whole_number_is_a_config_error(raw):
+    with pytest.raises(HistoryConfigError, match="CHAT_HISTORY_TURNS"):
+        chat_history_turns({"CHAT_HISTORY_TURNS": raw})
+
+
+def answer_last_message(request) -> tuple[int, bytes, str]:
+    """A glacier claim, citing the chunk id given in the request's last message."""
+    user = request["messages"][-1]["content"]
+    cid = re.search(r"chunk_id=(\d+)>>>\n" + re.escape(GLACIER), user).group(1)
+    reply = {"claims": [claim("It retreated forty metres.", cid, "retreated forty metres")]}
+    return 200, b"".join(stream_json(reply)), "text/event-stream"
+
+
+def turns(n: int) -> list[dict]:
+    return [{"question": f"question {i}?", "answer": f"answer {i}."} for i in range(1, n + 1)]
+
+
+def post_chat(client, body: dict, collection="papers"):
+    resp = client.post(f"/collections/{collection}/chat", json=body)
+    lines = [json.loads(line) for line in resp.text.splitlines() if line.strip()]
+    return resp, lines
+
+
+def sent_history(server) -> list[tuple[str, str]]:
+    """The (role, content) of the messages between the system message and the last."""
+    (request,) = [r["json"] for r in server.requests]
+    return [(m["role"], m["content"]) for m in request["messages"][1:-1]]
+
+
+@pytest.fixture
+def default_history(monkeypatch):
+    monkeypatch.delenv("CHAT_HISTORY_TURNS", raising=False)
+
+
+def test_chat_route_sends_only_the_last_six_turns_of_history(engine, server, default_history):
+    add_document(engine, "papers", PAPERS)
+    server.responder = answer_last_message
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        resp, events = post_chat(
+            client, {"question": "How far did the glacier retreat?", "history": turns(8)}
+        )
+
+    assert resp.status_code == 200
+    assert types(events) == ["claim", "done"]
+    expected = []
+    for t in turns(8)[2:]:
+        expected += [("user", t["question"]), ("assistant", t["answer"])]
+    assert sent_history(server) == expected
+    llm.close()
+
+
+@pytest.mark.parametrize("cap, sent", [("2", 2), ("0", 0), ("10", 8)])
+def test_chat_route_caps_history_at_chat_history_turns(engine, server, monkeypatch, cap, sent):
+    add_document(engine, "papers", PAPERS)
+    monkeypatch.setenv("CHAT_HISTORY_TURNS", cap)
+    server.responder = answer_last_message
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = post_chat(
+            client, {"question": "How far did the glacier retreat?", "history": turns(8)}
+        )
+
+    assert types(events) == ["claim", "done"]
+    history = sent_history(server)
+    assert len(history) == 2 * sent
+    if sent:
+        assert history[-1] == ("assistant", "answer 8.")
+    llm.close()
+
+
+def test_chat_route_without_history_sends_no_earlier_turns(engine, server, default_history):
+    add_document(engine, "papers", PAPERS)
+    server.responder = answer_last_message
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = post_chat(client, {"question": "How far did the glacier retreat?"})
+
+    assert types(events) == ["claim", "done"]
+    assert sent_history(server) == []
+    llm.close()
+
+
+def test_chat_route_with_a_bad_history_cap_ends_in_an_error_line(engine, server, monkeypatch):
+    add_document(engine, "papers", PAPERS)
+    monkeypatch.setenv("CHAT_HISTORY_TURNS", "lots")
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = post_chat(client, {"question": "How far?", "history": turns(1)})
+
+    assert types(events) == ["error"]
+    assert "CHAT_HISTORY_TURNS" in events[0]["message"]
+    assert server.requests == []
+    llm.close()
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        [{"question": "q?"}],
+        [{"answer": "a."}],
+        [{"question": "", "answer": "a."}],
+        [{"question": "q?", "answer": 3}],
+        "q? a.",
+    ],
+    ids=["no-answer", "no-question", "empty-question", "answer-not-text", "not-a-list"],
+)
+def test_chat_route_rejects_malformed_history(engine, server, history):
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        resp, _ = post_chat(client, {"question": "How far?", "history": history})
+
+    assert resp.status_code == 422
+    assert server.requests == []
+    llm.close()
+
+
+def test_a_refused_turn_with_an_empty_answer_is_accepted_as_history(
+    engine, server, default_history
+):
+    add_document(engine, "papers", PAPERS)
+    server.responder = answer_last_message
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = post_chat(
+            client,
+            {
+                "question": "How far did the glacier retreat?",
+                "history": [{"question": "Capital of France?", "answer": ""}],
+            },
+        )
+
+    assert types(events) == ["claim", "done"]
+    assert sent_history(server) == [("user", "Capital of France?"), ("assistant", "")]
+    llm.close()
+
+
+@pytest.mark.parametrize("body", [{}, {"mode": "fast"}], ids=["default", "fast"])
+def test_chat_route_answers_in_fast_mode(engine, server, body):
+    add_document(engine, "papers", PAPERS)
+    server.responder = answer_last_message
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = post_chat(client, {"question": "How far did the glacier retreat?", **body})
+
+    assert types(events) == ["claim", "done"]
+    assert events[-1]["mode"] == "fast"
+    (request,) = server.requests
+    assert request["json"]["model"] == "small", "fast mode asks the fast model"
+    llm.close()
+
+
+@pytest.mark.parametrize("mode", ["deep", "reasoning", "FAST", "", None, 1])
+def test_chat_route_rejects_any_mode_but_fast(engine, server, mode):
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        resp, _ = post_chat(client, {"question": "How far?", "mode": mode})
+
+    assert resp.status_code == 422
+    assert "mode" in resp.text
+    assert server.requests == []
+    llm.close()
+
+
+def test_chat_route_reports_the_model_and_its_cost(engine, server):
+    add_document(engine, "papers", PAPERS)
+    server.responder = answer_last_message
+    llm = make_client(server, price_in=3.0, price_out=15.0)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = post_chat(client, {"question": "How far did the glacier retreat?"})
+
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["mode"] == "fast"
+    assert done["model"] == "small"
+    # USAGE: 12 tokens in, 5 out.
+    assert done["cost"] == pytest.approx((12 * 3.0 + 5 * 15.0) / 1_000_000)
+    assert done["cost"] > 0
+    llm.close()
+
+
+def test_chat_route_reports_a_null_cost_without_prices(engine, server):
+    add_document(engine, "papers", PAPERS)
+    server.responder = answer_last_message
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        resp, events = post_chat(client, {"question": "How far did the glacier retreat?"})
+
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["model"] == "small"
+    assert "cost" in done and done["cost"] is None
+    assert '"cost": null' in resp.text.splitlines()[-1]
     llm.close()
