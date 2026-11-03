@@ -50,6 +50,54 @@ describe('Chat', () => {
     expect(answer).toHaveTextContent('The documents do not answer this.')
   })
 
+  it('shows an answer that finishes empty as an error, with its cost', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
+    )
+    render(<Chat collections={['default']} />)
+    ask('anything')
+
+    const answer = await screen.findByRole('article', { name: 'Answer' })
+    expect(await within(answer).findByRole('alert')).toHaveTextContent(
+      'The answer came back empty.',
+    )
+    expect(within(answer).getByLabelText('Answer details')).toHaveTextContent('cost unknown')
+  })
+
+  it('shows a request that fails before it streams as a failed answer', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')))
+    render(<Chat collections={['default']} />)
+    ask('anything')
+
+    const answer = await screen.findByRole('article', { name: 'Answer' })
+    expect(await within(answer).findByRole('alert')).toHaveTextContent(
+      'The answer failed: Failed to fetch',
+    )
+  })
+
+  it('stops a streaming answer when asked, and shows it as stopped', async () => {
+    vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: 'refusal' })}\n`))
+          init?.signal?.addEventListener('abort', () => c.error(new DOMException('', 'AbortError')))
+        },
+      })
+      return Promise.resolve(new Response(body))
+    })
+    render(<Chat collections={['default']} />)
+    ask('anything')
+
+    const answer = await screen.findByRole('article', { name: 'Answer' })
+    expect(await within(answer).findByText('No passage came close.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(await within(answer).findByRole('status')).toHaveTextContent(
+      'You stopped this answer before it finished.',
+    )
+    expect(answer).toHaveAttribute('aria-busy', 'false')
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
   it('cannot ask with no collection', () => {
     render(<Chat collections={[]} />)
     fireEvent.change(screen.getByLabelText('Ask a question'), { target: { value: 'q' } })

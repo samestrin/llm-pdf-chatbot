@@ -1,5 +1,12 @@
 import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react'
-import { streamChat, type ChatEvent, type ClaimEvent, type DoneEvent } from './api'
+import AnswerMeta from './AnswerMeta'
+import {
+  streamChat,
+  type ChatEvent,
+  type ClaimEvent,
+  type DoneEvent,
+  type Passage,
+} from './api'
 
 // pdf.js is large; load the viewer the first time a citation is opened.
 const PdfViewer = lazy(() => import('./PdfViewer'))
@@ -9,10 +16,19 @@ const DEFAULT_COLLECTION = 'default'
 interface Turn {
   question: string
   claims: ClaimEvent[]
-  refused: boolean
+  /** The closest passages of a refusal; `null` when the answer was not refused. */
+  refusal: Passage[] | null
   error: string | null
   done: DoneEvent | null
   streaming: boolean
+  /** The person stopped the answer before it finished. */
+  stopped: boolean
+}
+
+const CUT_OFF = 'The answer stopped before it finished.'
+
+function failed(message: string | undefined): string {
+  return message?.trim() ? `The answer failed: ${message}` : 'The answer failed.'
 }
 
 function apply(turn: Turn, event: ChatEvent): Turn {
@@ -20,9 +36,9 @@ function apply(turn: Turn, event: ChatEvent): Turn {
     case 'claim':
       return { ...turn, claims: [...turn.claims, event] }
     case 'refusal':
-      return { ...turn, refused: true }
+      return { ...turn, refusal: event.passages ?? [] }
     case 'error':
-      return { ...turn, error: event.message, streaming: false }
+      return { ...turn, error: failed(event.message), streaming: false }
     case 'done':
       return { ...turn, done: event, streaming: false }
     default:
@@ -40,7 +56,36 @@ function Citation({ claim, onOpen }: { claim: ClaimEvent; onOpen: (c: ClaimEvent
   )
 }
 
+function Refusal({ passages }: { passages: Passage[] }) {
+  return (
+    <div className="refusal">
+      <h3>Not in your documents</h3>
+      <p>The documents do not answer this.</p>
+      {passages.length > 0 ? (
+        <>
+          <p>The closest passages:</p>
+          <ul aria-label="Closest passages">
+            {passages.map((passage, i) => (
+              <li key={i}>
+                <span>
+                  {passage.document.filename}, p. {passage.page}
+                </span>
+                <blockquote>{passage.text}</blockquote>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p>No passage came close.</p>
+      )}
+    </div>
+  )
+}
+
 function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void }) {
+  // A finished answer with no claim, no refusal and no error would show nothing.
+  const empty =
+    turn.done !== null && turn.claims.length === 0 && turn.refusal === null && !turn.error
   return (
     <article aria-label="Answer" aria-busy={turn.streaming}>
       {turn.claims.length > 0 && (
@@ -52,9 +97,12 @@ function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void 
           ))}
         </ul>
       )}
-      {turn.refused && <p>The documents do not answer this.</p>}
-      {turn.streaming && turn.claims.length === 0 && <p>Thinking…</p>}
+      {turn.refusal && <Refusal passages={turn.refusal} />}
+      {turn.streaming && turn.claims.length === 0 && turn.refusal === null && <p>Thinking…</p>}
       {turn.error && <p role="alert">{turn.error}</p>}
+      {empty && <p role="alert">The answer came back empty.</p>}
+      {turn.stopped && <p role="status">You stopped this answer before it finished.</p>}
+      {turn.done && <AnswerMeta done={turn.done} />}
     </article>
   )
 }
@@ -85,7 +133,15 @@ export default function Chat({ collections }: { collections: string[] }) {
       setTurns((all) => all.map((t, i) => (i === index ? f(t) : t)))
     setTurns((all) => [
       ...all,
-      { question: q, claims: [], refused: false, error: null, done: null, streaming: true },
+      {
+        question: q,
+        claims: [],
+        refusal: null,
+        error: null,
+        done: null,
+        streaming: true,
+        stopped: false,
+      },
     ])
     setQuestion('')
 
@@ -93,16 +149,26 @@ export default function Chat({ collections }: { collections: string[] }) {
     controller.current = abort
     try {
       for await (const event of streamChat(collection, q, abort.signal)) {
+        if (abort.signal.aborted) break
         update((t) => apply(t, event))
         if (event.type === 'done' || event.type === 'error') return
       }
-      // A stream that ends without `done` or `error` was cut off.
-      update((t) => ({ ...t, error: 'The answer stopped before it finished.', streaming: false }))
+      if (!abort.signal.aborted) {
+        // A stream that ends without `done` or `error` was cut off.
+        update((t) => ({ ...t, error: CUT_OFF, streaming: false }))
+        return
+      }
     } catch (err) {
-      if (abort.signal.aborted) return
-      const message = err instanceof Error ? err.message : 'the answer failed'
-      update((t) => ({ ...t, error: message, streaming: false }))
+      if (!abort.signal.aborted) {
+        update((t) => ({
+          ...t,
+          error: failed(err instanceof Error ? err.message : undefined),
+          streaming: false,
+        }))
+        return
+      }
     }
+    update((t) => ({ ...t, stopped: true, streaming: false }))
   }
 
   return (
@@ -141,6 +207,14 @@ export default function Chat({ collections }: { collections: string[] }) {
         <button type="submit" disabled={!question.trim() || !collection || streaming}>
           Ask
         </button>
+        {streaming && (
+          <>
+            {' '}
+            <button type="button" onClick={() => controller.current?.abort()}>
+              Stop
+            </button>
+          </>
+        )}
         {collections.length === 0 && <p>Upload a document to ask about it.</p>}
       </form>
     </section>

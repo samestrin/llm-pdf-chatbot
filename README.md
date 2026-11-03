@@ -69,6 +69,10 @@ Reranking is optional and runs on a separate HTTP service; no model is added to 
 
 Each retrieval also reports `top_similarity`: the cosine similarity of the collection's nearest passage to the question, clamped to 0..1. Fusion and rerank scores cannot be compared from one question to the next, so this is the number a "not in your documents" threshold compares.
 
+## Answers
+
+An answer the documents do not support is shown as "Not in your documents", with the closest passages the search found (file, page and text), or a note that none came close. An answer is never left blank: an error from the backend, a request that fails, a stream that ends before its final event and an answer that finishes with nothing in it are each shown as an error, and an answer stopped with the Stop button says it was stopped. A finished answer shows its mode, model and cost; a cost the backend could not work out is shown as "cost unknown", never as $0. Model, quote, passage and file-name text is always shown as plain text, never as markup.
+
 ## Citation viewer
 
 Each claim in an answer has a citation chip (document, page). Clicking it opens that page of the stored PDF with pdf.js and highlights the quote. The quote is found by searching the page's pdf.js text layer, comparing letters and digits only (case, spacing, line breaks, hyphens, punctuation, ligatures and accents are ignored), because the stored page text the quote comes from may have been read by another extractor or by OCR. When the quote is not found, the page still opens, with a "Quote not located on this page." notice and the quote text beside it. If a claim carries `boxes` (rectangles in PDF points, origin at the page's bottom-left), those are drawn instead and no search is made.

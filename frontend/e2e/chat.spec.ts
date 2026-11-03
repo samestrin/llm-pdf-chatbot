@@ -121,6 +121,6 @@ test('shows the backend error when the chat request is rejected', async ({ page,
   await page.getByRole('button', { name: 'Ask' }).click()
 
   await expect(page.getByRole('article', { name: 'Answer' }).getByRole('alert')).toHaveText(
-    'mode must be fast',
+    'The answer failed: mode must be fast',
   )
 })
