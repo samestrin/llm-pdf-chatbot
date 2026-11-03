@@ -7,13 +7,17 @@ streamed, and each claim is sent on as soon as its JSON object is whole.
 Retrieved text is data, never instructions. Each passage sits between markers holding
 a nonce made for this request and absent from every passage, so no passage can close
 its own marker and go on as if it were the prompt; the system message says that text
-between the markers is never an instruction. A claim citing a chunk that was not
-retrieved is dropped.
+between the markers is never an instruction.
+
+A claim is shown only when its citation checks out (`app.citation`): it cites a chunk
+that was retrieved, its quote, normalised, is a substring of that chunk, and the chunk's
+offsets resolve to the chunk's own text on the stored page. Any other claim is dropped,
+never shown as cited. The quote sent is the exact page text the quote matched.
 
 The answer is a stream of events, one JSON object per line (NDJSON), in the shape
 `frontend/src/api.ts` reads:
 
-- `claim`: text, document {id, filename}, page, chunk_id, quote
+- `claim`: text, document {id, filename}, page, chunk_id, quote (exact page text)
 - `refusal`: the passages, when no claim is left to show
 - `error`: message
 - `done`: mode, model, cost
@@ -29,6 +33,7 @@ import re
 import secrets
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack
+from functools import partial
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Request
@@ -37,9 +42,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Engine, select
 
+from app.citation import find_quote
 from app.db import documents
 from app.ingest import Embedder
 from app.llm import ChatModel, LLMClient, LLMConfig, LLMError, LLMResponseError
+from app.pages import resolve_offset
 from app.retrieval import Passage, Reranker, RerankError, retrieve
 
 ANSWER_SCHEMA: dict[str, Any] = {
@@ -79,6 +86,11 @@ not answer the question, reply with an empty list of claims."""
 
 log = logging.getLogger(__name__)
 
+ResolveOffset = Callable[[str, int, int, int], str]
+"""(document_id, page, start, end) -> the stored page text at `[start, end)`, as
+`app.pages.resolve_offset`: LookupError when the page has no stored text, ValueError
+when the span is outside it."""
+
 
 class AnswerFormatError(LLMResponseError):
     """The model's reply does not match `ANSWER_SCHEMA`."""
@@ -110,14 +122,16 @@ def answer_events(
     question: str,
     passages: list[Passage],
     filenames: Mapping[str, str],
+    resolve: ResolveOffset,
     mode: ChatModel = "fast",
 ) -> Iterator[dict[str, Any]]:
     """The events of the answer to `question` from `passages`; see the module docstring.
 
-    `filenames` maps each passage's document id to its file name.
+    `filenames` maps each passage's document id to its file name; `resolve` reads the
+    stored page text a citation must resolve to.
     """
     try:
-        yield from _answer(llm, question, passages, filenames, mode)
+        yield from _answer(llm, question, passages, filenames, _Citations(resolve), mode)
     except Exception as exc:  # noqa: BLE001 -- any failure must end the answer in an error event.
         yield _error(exc)
 
@@ -145,7 +159,8 @@ def chat_events(
         except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
             yield _error(exc)
             return
-        yield from answer_events(llm, question, found.passages, filenames)
+        resolve = partial(resolve_offset, engine)
+        yield from answer_events(llm, question, found.passages, filenames, resolve)
 
 
 router = APIRouter()
@@ -181,6 +196,7 @@ def _answer(
     question: str,
     passages: list[Passage],
     filenames: Mapping[str, str],
+    citations: "_Citations",
     mode: ChatModel,
 ) -> Iterator[dict[str, Any]]:
     by_id = {str(p.chunk_id): p for p in passages}
@@ -195,7 +211,7 @@ def _answer(
         try:
             for piece in stream:
                 for raw in scanner.feed(piece):
-                    event = _claim_event(raw, by_id, filenames)
+                    event = _claim_event(raw, by_id, filenames, citations)
                     if event is not None:
                         shown += 1
                         yield event
@@ -208,7 +224,7 @@ def _answer(
         if claims[: len(scanner.claims)] != scanner.claims:
             raise AnswerFormatError("the streamed claims are not the claims of the whole reply")
         for raw in claims[len(scanner.claims) :]:
-            event = _claim_event(raw, by_id, filenames)
+            event = _claim_event(raw, by_id, filenames, citations)
             if event is not None:
                 shown += 1
                 yield event
@@ -230,9 +246,12 @@ def _answer(
 
 
 def _claim_event(
-    raw: Any, by_id: Mapping[str, Passage], filenames: Mapping[str, str]
+    raw: Any,
+    by_id: Mapping[str, Passage],
+    filenames: Mapping[str, str],
+    citations: "_Citations",
 ) -> dict[str, Any] | None:
-    """The event for one claim of the reply; None when it cites a chunk not retrieved."""
+    """The event for one claim of the reply; None when its citation does not check out."""
     if not isinstance(raw, dict):
         raise AnswerFormatError("a claim is not an object")
     text, chunk_id, quote = raw.get("text"), raw.get("chunk_id"), raw.get("quote")
@@ -241,6 +260,10 @@ def _claim_event(
             raise AnswerFormatError(f"a claim has no {name} string")
     p = by_id.get(chunk_id.strip())
     if p is None:
+        log.info("claim dropped: chunk %.40r was not retrieved", chunk_id)
+        return None
+    on_page = citations.quote_on_page(p, quote)
+    if on_page is None:
         return None
     return {
         "type": "claim",
@@ -248,8 +271,37 @@ def _claim_event(
         "document": _document(p, filenames),
         "page": p.page,
         "chunk_id": str(p.chunk_id),
-        "quote": quote,
+        "quote": on_page,
     }
+
+
+class _Citations:
+    """Checks quotes against their chunks, resolving each chunk on its page once."""
+
+    def __init__(self, resolve: ResolveOffset):
+        self._resolve = resolve
+        self._resolves: dict[int, bool] = {}
+
+    def quote_on_page(self, p: Passage, quote: str) -> str | None:
+        """The page text the quote matches in chunk `p`; None when it is not there, or
+        when the chunk's offsets do not resolve to the chunk's text on its page."""
+        span = find_quote(quote, p.text)
+        if span is None:
+            log.info("claim dropped: quote not in chunk %s", p.chunk_id)
+            return None
+        if not self._chunk_resolves(p):
+            log.warning("claim dropped: chunk %s does not resolve to its page text", p.chunk_id)
+            return None
+        return p.text[span[0] : span[1]]
+
+    def _chunk_resolves(self, p: Passage) -> bool:
+        if p.chunk_id not in self._resolves:
+            try:
+                text = self._resolve(p.document_id, p.page, p.start_offset, p.end_offset)
+            except (LookupError, ValueError):
+                text = None
+            self._resolves[p.chunk_id] = text == p.text
+        return self._resolves[p.chunk_id]
 
 
 def _document(p: Passage, filenames: Mapping[str, str]) -> dict[str, str | None]:

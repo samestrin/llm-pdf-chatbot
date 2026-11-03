@@ -1,13 +1,15 @@
 import json
 import re
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 from test_llm import USAGE, FakeServer, delta, make_client, sse
 from test_retrieval import GLACIER, PAPERS, ZEBRAS, TopicEmbedder, add_document
 
 from app.answer import ANSWER_SCHEMA, answer_events, build_messages
-from app.db import init_db
+from app.db import init_db, pages
 from app.main import create_app
 from app.retrieval import Passage
 
@@ -60,10 +62,36 @@ def stream_json(reply, pieces: int = 5, done: bool = True, finish_reason="stop")
     return [sse(e, done=False) for e in events] + ([b"data: [DONE]\n\n"] if done else [])
 
 
-def run(server, passages=PASSAGES, question="How far did the glacier retreat?", **client_kw):
+def page_texts(passages) -> dict[tuple[str, int], str]:
+    """Each passage's page as its chunk text alone, at the passage's offsets."""
+    return {(p.document_id, p.page): " " * p.start_offset + p.text for p in passages}
+
+
+def resolver(texts: dict[tuple[str, int], str]):
+    """A stand-in for `resolve_offset` on these stored page texts, with its errors."""
+
+    def resolve(document_id: str, page: int, start: int, end: int) -> str:
+        text = texts.get((document_id, page))
+        if text is None:
+            raise LookupError(f"no page {page}")
+        if not 0 <= start < end <= len(text):
+            raise ValueError(f"[{start}, {end}) outside page {page}")
+        return text[start:end]
+
+    return resolve
+
+
+def run(
+    server,
+    passages=PASSAGES,
+    question="How far did the glacier retreat?",
+    pages=None,
+    **client_kw,
+):
     client = make_client(server, **client_kw)
+    resolve = resolver(page_texts(passages) if pages is None else pages)
     try:
-        return list(answer_events(client, question, passages, FILENAMES))
+        return list(answer_events(client, question, passages, FILENAMES, resolve))
     finally:
         client.close()
 
@@ -150,6 +178,94 @@ def test_claim_citing_a_chunk_that_was_not_retrieved_is_not_shown(server):
 
     assert types(events) == ["claim", "done"]
     assert events[0]["chunk_id"] == "11"
+
+
+# --- The citation check: a quote must be in its chunk, and the chunk on its page ---
+
+
+def test_a_planted_fake_quote_is_not_shown(server):
+    fake = claim("The glacier retreated fifty metres.", 11, "retreated fifty metres")
+    server.stream(stream_json({"claims": [fake, GLACIER_CLAIM]}))
+
+    events = run(server)
+
+    assert types(events) == ["claim", "done"]
+    assert events[0]["quote"] == "retreated forty metres"
+
+
+def test_a_quote_from_another_retrieved_chunk_is_not_shown(server):
+    server.stream(stream_json({"claims": [claim("Zebras.", 11, "each dry season")]}))
+
+    assert types(run(server)) == ["refusal", "done"]
+
+
+def test_only_fake_quotes_is_a_refusal_not_an_answer(server):
+    fake = claim("The glacier grew.", 11, "the glacier grew")
+    server.stream(stream_json({"claims": [fake]}))
+
+    events = run(server)
+
+    assert types(events) == ["refusal", "done"]
+    assert "the glacier grew" not in json.dumps(events).lower()
+
+
+@pytest.mark.parametrize(
+    ("text", "quote", "on_page"),
+    [
+        ("The \ufb01eld station was cut.", "field station", "\ufb01eld station"),
+        ("The glacier re-\ntreated last year.", "glacier retreated", "glacier re-\ntreated"),
+        ("It fell forty\u00a0metres.", "forty metres", "forty\u00a0metres"),
+    ],
+)
+def test_a_normalised_quote_is_shown_as_the_text_on_the_page(server, text, quote, on_page):
+    server.stream(stream_json({"claims": [claim("A claim.", 11, quote)]}))
+
+    events = run(server, passages=[passage(11, text, page=3)])
+
+    assert types(events) == ["claim", "done"]
+    assert events[0]["quote"] == on_page
+
+
+def test_the_quote_is_resolved_at_the_chunk_offset_on_the_page(server):
+    page = "Heading\n\n" + GLACIER + "\n\nMore text."
+    start = page.index(GLACIER)
+    cited = replace(PASSAGES[0], start_offset=start, end_offset=start + len(GLACIER))
+    server.stream(stream_json({"claims": [GLACIER_CLAIM]}))
+
+    events = run(server, passages=[cited], pages={(GLACIER_DOC, 3): page})
+
+    assert types(events) == ["claim", "done"]
+    assert events[0]["quote"] == "retreated forty metres"
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        "The glacier advanced forty metres last year.",  # page text changed under the chunk
+        "The glacier",  # offsets past the end of the page
+        None,  # page not stored
+    ],
+)
+def test_a_chunk_whose_offset_does_not_resolve_to_its_text_is_not_cited(server, page):
+    server.stream(stream_json({"claims": [GLACIER_CLAIM]}))
+    texts = {} if page is None else {(GLACIER_DOC, 3): page}
+
+    events = run(server, passages=[PASSAGES[0]], pages=texts)
+
+    assert types(events) == ["refusal", "done"]
+
+
+def test_a_failure_to_read_the_page_ends_in_an_error(server):
+    server.stream(stream_json({"claims": [GLACIER_CLAIM]}))
+    client = make_client(server)
+
+    def broken(*_):
+        raise ConnectionError("database is down")
+
+    events = list(answer_events(client, "q?", PASSAGES, FILENAMES, broken))
+    client.close()
+
+    assert types(events) == ["error"]
 
 
 @pytest.mark.parametrize(
@@ -406,6 +522,34 @@ def test_chat_route_streams_claims_from_retrieved_chunks(engine, server):
     assert events[0]["page"] == 2
     assert events[0]["quote"] == "retreated forty metres"
     llm.close()
+
+
+def test_chat_route_does_not_cite_a_chunk_whose_page_text_changed(engine, server):
+    doc_id = add_document(engine, "papers", PAPERS)
+    with engine.begin() as conn:
+        conn.execute(
+            update(pages)
+            .where(pages.c.document_id == doc_id, pages.c.page == 2)
+            .values(text=GLACIER.replace("retreated", "advanced!"))
+        )
+    server.responder = lambda request: (
+        200,
+        b"".join(stream_json({"claims": [glacier_claim_for(request)]})),
+        "text/event-stream",
+    )
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["refusal", "done"]
+    llm.close()
+
+
+def glacier_claim_for(request) -> dict:
+    """A claim on the glacier passage, citing the chunk id the request gave it."""
+    user = request["messages"][1]["content"]
+    cid = re.search(r"chunk_id=(\d+)>>>\n" + re.escape(GLACIER), user).group(1)
+    return claim("It retreated forty metres.", cid, "retreated forty metres")
 
 
 def test_chat_route_failed_model_call_ends_in_an_error_line(engine, server):
