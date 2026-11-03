@@ -32,13 +32,14 @@ export interface ApiMock {
 }
 
 // Every test gets every `/api/**` request from the page answered by a route
-// fixture: `GET /api/health` by default, the rest by `api.on(...)`. A request
+// fixture: `GET /api/health` and `GET /api/collections` (empty) by default, the rest by `api.on(...)`. A request
 // with no mock gets a 501 and fails the test, so no test ever reaches a backend.
 export const test = base.extend<{ api: ApiMock }>({
   api: [
     async ({ page, baseURL }, use) => {
       const handlers = new Map<string, MockHandler>([
         ['GET /api/health', json({ status: 'ok' })],
+        ['GET /api/collections', json([])],
       ])
       const calls: string[] = []
       const unmocked: string[] = []

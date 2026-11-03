@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import DocumentsPanel from './DocumentsPanel'
 import { getHealth, type Health } from './api'
 
 export default function App() {
@@ -13,8 +14,9 @@ export default function App() {
   return (
     <main>
       <h1>LLM PDF Chatbot</h1>
-      <p>Placeholder page. The chat interface is coming soon.</p>
+      <p>The chat interface is coming soon.</p>
       <p role="status">Backend: {health}</p>
+      <DocumentsPanel />
     </main>
   )
 }

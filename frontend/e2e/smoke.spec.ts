@@ -12,7 +12,7 @@ test('loads the app and shows the backend health from same-origin /api', async (
   expect((await health).url()).toBe(`${baseURL}/api/health`)
   await expect(page.getByRole('status')).toHaveText('Backend: ok')
   // React StrictMode runs the effect twice in dev, so the call can repeat.
-  expect(new Set(api.calls)).toEqual(new Set(['GET /api/health']))
+  expect(new Set(api.calls)).toEqual(new Set(['GET /api/health', 'GET /api/collections']))
 })
 
 test('shows the backend as unreachable when /api/health fails', async ({ page, api }) => {

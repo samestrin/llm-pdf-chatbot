@@ -2,7 +2,9 @@ import { render, screen } from '@testing-library/react'
 import App from './App'
 
 function stubFetch(response: () => Promise<Response>) {
-  const fetch = vi.fn(response)
+  const fetch = vi.fn((url: string) =>
+    url === '/api/collections' ? Promise.resolve(Response.json([])) : response(),
+  )
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
