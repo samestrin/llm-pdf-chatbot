@@ -1,9 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import Chat from './Chat'
 import DocumentsPanel from './DocumentsPanel'
-import { getHealth, type Health } from './api'
+import { getHealth, type Collection, type Health } from './api'
 
 export default function App() {
   const [health, setHealth] = useState<Health | 'checking'>('checking')
+  const [collections, setCollections] = useState<string[]>([])
+  const onCollections = useCallback(
+    (loaded: Collection[]) => setCollections(loaded.map((c) => c.name)),
+    [],
+  )
 
   useEffect(() => {
     const controller = new AbortController()
@@ -14,9 +20,9 @@ export default function App() {
   return (
     <main>
       <h1>LLM PDF Chatbot</h1>
-      <p>The chat interface is coming soon.</p>
       <p role="status">Backend: {health}</p>
-      <DocumentsPanel />
+      <Chat collections={collections} />
+      <DocumentsPanel onCollections={onCollections} />
     </main>
   )
 }

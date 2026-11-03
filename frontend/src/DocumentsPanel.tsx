@@ -49,7 +49,12 @@ function StatusLine({ doc }: { doc: DocumentInfo }) {
   return <p>Ready: {s.pages_total} pages</p>
 }
 
-export default function DocumentsPanel() {
+export default function DocumentsPanel({
+  onCollections,
+}: {
+  /** Called with the collections each time they are loaded. */
+  onCollections?: (collections: Collection[]) => void
+} = {}) {
   const [collections, setCollections] = useState<Collection[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [collection, setCollection] = useState(DEFAULT_COLLECTION)
@@ -59,13 +64,15 @@ export default function DocumentsPanel() {
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
-      setCollections(await listCollections(signal))
+      const loaded = await listCollections(signal)
+      setCollections(loaded)
+      onCollections?.(loaded)
       setLoadError(null)
     } catch (err) {
       if (signal?.aborted) return
       setLoadError(err instanceof Error ? err.message : 'could not load documents')
     }
-  }, [])
+  }, [onCollections])
 
   const busy = collections.some((c) => c.documents.some(isBusy))
 

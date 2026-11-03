@@ -1,4 +1,4 @@
-import { deleteDocument, listCollections, uploadDocument } from './api'
+import { deleteDocument, listCollections, streamChat, uploadDocument, type ChatEvent } from './api'
 
 class FakeXhr {
   static last: FakeXhr
@@ -99,5 +99,70 @@ describe('listCollections and deleteDocument', () => {
     expect(fetch).toHaveBeenCalledWith('/api/documents/a%2Fb', { method: 'DELETE' })
     stub(Response.json({ detail: 'document not found' }, { status: 404 }))
     await expect(deleteDocument('x')).rejects.toThrow('document not found')
+  })
+})
+
+describe('streamChat', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function streamOf(...parts: string[]) {
+    const enc = new TextEncoder()
+    return new ReadableStream<Uint8Array>({
+      start(c) {
+        for (const p of parts) c.enqueue(enc.encode(p))
+        c.close()
+      },
+    })
+  }
+
+  async function collect(gen: AsyncIterable<ChatEvent>) {
+    const out: ChatEvent[] = []
+    for await (const e of gen) out.push(e)
+    return out
+  }
+
+  it('posts the question and yields NDJSON events, even split across chunks', async () => {
+    const fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          streamOf(
+            '{"type":"claim","text":"A","document":{"id":"d","filename":"f.pdf"},',
+            '"page":2,"chunk_id":"c","quote":"q"}\n\n{"type":"done","mode":"fast",',
+            '"model":"m","cost":null}',
+          ),
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetch)
+
+    const events = await collect(streamChat('my docs', 'why?'))
+
+    expect(fetch).toHaveBeenCalledWith('/api/collections/my%20docs/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: 'why?', mode: 'fast' }),
+      signal: undefined,
+    })
+    expect(events).toEqual([
+      {
+        type: 'claim',
+        text: 'A',
+        document: { id: 'd', filename: 'f.pdf' },
+        page: 2,
+        chunk_id: 'c',
+        quote: 'q',
+      },
+      { type: 'done', mode: 'fast', model: 'm', cost: null },
+    ])
+  })
+
+  it('throws the backend detail when the request is rejected', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(Response.json({ detail: 'bad mode' }, { status: 422 })))
+    await expect(collect(streamChat('c', 'q'))).rejects.toThrow('bad mode')
+  })
+
+  it('throws on a line that is not an event', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(streamOf('not json\n'))))
+    await expect(collect(streamChat('c', 'q'))).rejects.toThrow('malformed answer stream')
   })
 })

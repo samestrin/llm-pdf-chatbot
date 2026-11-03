@@ -76,7 +76,7 @@ npx playwright install chromium
 npm run test:e2e   # browser tests (Playwright, chromium)
 ```
 
-The browser tests start their own Vite dev server and never call a real backend: every `/api` request from the page is answered by a route fixture in `frontend/e2e/fixtures.ts`, and a request with no fixture fails the test. `frontend/e2e/fixtures/sample.pdf` is a committed two-page PDF for viewer tests.
+The browser tests start their own Vite dev server and never call a real backend: every `/api` request from the page is answered by a route fixture in `frontend/e2e/fixtures.ts`, and a request with no fixture fails the test. A streamed chat answer cannot be sent in pieces by a route fixture, so the chat test lets its request through the dev server's `/api` proxy to `frontend/e2e/fake-backend.mjs`, which streams an answer the test scripts and releases one part at a time. `frontend/e2e/fixtures/sample.pdf` is a committed two-page PDF for viewer tests.
 
 ## Layout
 

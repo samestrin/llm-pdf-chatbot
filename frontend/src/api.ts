@@ -95,3 +95,84 @@ export function uploadDocument(
     xhr.send(form)
   })
 }
+
+// Chat stream contract (epic 04 plan, assumed from epic 03 T3/T6; check against
+// the live backend when epic 03 closes): `POST /collections/{name}/chat` with
+// `{question, mode}` answers with NDJSON, one event per line.
+export interface CitedDocument {
+  id: string
+  filename: string
+}
+
+export interface ClaimEvent {
+  type: 'claim'
+  text: string
+  document: CitedDocument
+  page: number
+  chunk_id: string
+  quote: string
+}
+
+export interface Passage {
+  document: CitedDocument
+  page: number
+  chunk_id: string
+  text: string
+}
+
+export interface RefusalEvent {
+  type: 'refusal'
+  passages: Passage[]
+}
+
+export interface ErrorEvent {
+  type: 'error'
+  message: string
+}
+
+export interface DoneEvent {
+  type: 'done'
+  mode: string
+  model: string
+  cost: number | null
+}
+
+export type ChatEvent = ClaimEvent | RefusalEvent | ErrorEvent | DoneEvent
+
+function parseEvent(line: string): ChatEvent {
+  try {
+    const event = JSON.parse(line)
+    if (event && typeof event.type === 'string') return event
+  } catch {
+    // reported below
+  }
+  throw new Error('malformed answer stream')
+}
+
+/** Ask a question and yield the answer's events as they arrive. */
+export async function* streamChat(
+  collection: string,
+  question: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatEvent> {
+  const res = await fetch(`${API_BASE}/collections/${encodeURIComponent(collection)}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, mode: 'fast' }),
+    signal,
+  })
+  if (!res.ok) throw new Error(await errorDetail(res))
+  if (!res.body) throw new Error('the answer has no body')
+
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += value
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) if (line.trim()) yield parseEvent(line)
+  }
+  if (buffer.trim()) yield parseEvent(buffer)
+}
