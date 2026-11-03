@@ -46,6 +46,17 @@ class OcrSettings:
 
 
 @dataclass(frozen=True)
+class TextBox:
+    """Where a span of the page text sits on the page, when the reader can say."""
+
+    start: int
+    end: int
+    """Character offsets into `PageRead.text`, end exclusive."""
+    bbox: tuple[float, float, float, float]
+    """`(x0, y0, x1, y1)` in PDF points."""
+
+
+@dataclass(frozen=True)
 class PageRead:
     page: int
     """1-based page number."""
@@ -57,6 +68,9 @@ class PageRead:
     """Why OCR did not read this page, when OCR was tried and failed."""
     error: str | None = None
     """Why no method could read this page."""
+    boxes: tuple[TextBox, ...] = ()
+    """Bounding boxes for spans of `text`. Neither the OCR contract nor the text layer read
+    gives any yet, so this stays empty until a reader returns them."""
 
     @property
     def failed(self) -> bool:

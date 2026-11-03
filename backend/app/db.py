@@ -5,14 +5,18 @@ so deleting the document row removes everything derived from it.
 """
 
 from sqlalchemy import (
+    JSON,
+    CheckConstraint,
     Column,
     DateTime,
     Engine,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     MetaData,
     String,
     Table,
+    Text,
     event,
     func,
 )
@@ -43,6 +47,46 @@ documents = Table(
     Column("size_bytes", Integer, nullable=False),
     Column("page_count", Integer, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
+# One row per page of a document, as the reader returned it. `text` is the exact page
+# text that chunk offsets index into, so a citation can be resolved back to it.
+pages = Table(
+    "pages",
+    metadata,
+    Column(
+        "document_id",
+        String(32),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("page", Integer, primary_key=True),
+    Column("text", Text),
+    Column("method", String(32)),
+    Column("ocr_error", Text),
+    Column("error", Text),
+)
+
+chunks = Table(
+    "chunks",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("document_id", String(32), nullable=False, index=True),
+    Column("page", Integer, nullable=False),
+    # Order of the chunk within its document.
+    Column("seq", Integer, nullable=False),
+    # `pages.text[start_offset:end_offset] == text`, in characters (code points).
+    Column("start_offset", Integer, nullable=False),
+    Column("end_offset", Integer, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("heading", Text),
+    # `[x0, y0, x1, y1]` in PDF points, only when the reader returned boxes.
+    Column("bbox", JSON(none_as_null=True)),
+    ForeignKeyConstraint(
+        ["document_id", "page"], ["pages.document_id", "pages.page"], ondelete="CASCADE"
+    ),
+    CheckConstraint("start_offset >= 0 AND end_offset > start_offset", name="chunk_offsets"),
 )
 
 
