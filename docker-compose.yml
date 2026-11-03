@@ -18,6 +18,9 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-chatbot}
+      UPLOAD_DIR: /app/data/uploads
+    volumes:
+      - uploads:/app/data/uploads
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -43,3 +46,4 @@ services:
 
 volumes:
   db-data:
+  uploads:

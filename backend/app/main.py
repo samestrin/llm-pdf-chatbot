@@ -1,8 +1,12 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from app import documents
+from app.db import init_db
 
 DEFAULT_DATABASE_URL = "sqlite:///./app.db"
 
@@ -12,8 +16,15 @@ def make_engine() -> Engine:
 
 
 def create_app(engine: Engine | None = None) -> FastAPI:
-    app = FastAPI(title="llm-pdf-chatbot")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        init_db(app.state.engine)
+        yield
+
+    app = FastAPI(title="llm-pdf-chatbot", lifespan=lifespan)
     app.state.engine = engine or make_engine()
+    app.state.limits = documents.Limits.from_env()
+    app.include_router(documents.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
