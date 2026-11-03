@@ -19,6 +19,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-chatbot}
       UPLOAD_DIR: /app/data/uploads
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_FAST_MODEL: ${LLM_FAST_MODEL:-}
+      LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-}
+      LLM_EMBEDDING_MODEL: ${LLM_EMBEDDING_MODEL:-}
+      OCR_URL: ${OCR_URL:-}
     volumes:
       - uploads:/app/data/uploads
     ports:
