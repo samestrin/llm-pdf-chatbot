@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from dataclasses import replace
 
@@ -8,10 +9,17 @@ from sqlalchemy import update
 from test_llm import USAGE, FakeServer, delta, make_client, sse
 from test_retrieval import GLACIER, PAPERS, ZEBRAS, TopicEmbedder, add_document
 
-from app.answer import ANSWER_SCHEMA, answer_events, build_messages
+from app.answer import (
+    ANSWER_SCHEMA,
+    DEFAULT_REFUSAL_MIN_SIMILARITY,
+    RefusalConfigError,
+    answer_events,
+    build_messages,
+    refusal_min_similarity,
+)
 from app.db import init_db, pages
 from app.main import create_app
-from app.retrieval import Passage
+from app.retrieval import Passage, retrieve
 
 GLACIER_DOC = "doc-glacier"
 ZEBRA_DOC = "doc-zebra"
@@ -581,5 +589,116 @@ def test_chat_route_rejects_an_empty_question(engine, server, question):
         resp = client.post("/collections/papers/chat", json={"question": question})
 
     assert resp.status_code == 422
+    assert server.requests == []
+    llm.close()
+
+
+# --- Refusal: an off-topic question is not sent to the model ---
+
+
+def test_the_refusal_threshold_has_a_committed_default():
+    assert refusal_min_similarity({}) == DEFAULT_REFUSAL_MIN_SIMILARITY
+    assert 0 < DEFAULT_REFUSAL_MIN_SIMILARITY < 1
+    assert (
+        refusal_min_similarity({"REFUSAL_MIN_SIMILARITY": "  "}) == DEFAULT_REFUSAL_MIN_SIMILARITY
+    )
+
+
+@pytest.mark.parametrize("raw, value", [("0.55", 0.55), (" 0 ", 0.0), ("1", 1.0)])
+def test_the_refusal_threshold_is_read_from_the_environment(raw, value):
+    assert refusal_min_similarity({"REFUSAL_MIN_SIMILARITY": raw}) == value
+
+
+@pytest.mark.parametrize("raw", ["high", "-0.1", "1.5", "nan", "inf"])
+def test_a_refusal_threshold_outside_zero_to_one_is_a_config_error(raw):
+    with pytest.raises(RefusalConfigError, match="REFUSAL_MIN_SIMILARITY"):
+        refusal_min_similarity({"REFUSAL_MIN_SIMILARITY": raw})
+
+
+@pytest.fixture
+def default_threshold(monkeypatch):
+    monkeypatch.delenv("REFUSAL_MIN_SIMILARITY", raising=False)
+
+
+def test_chat_route_refuses_an_off_topic_question_with_the_closest_passages(
+    engine, server, default_threshold
+):
+    doc_id = add_document(engine, "papers", PAPERS)
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        resp, events = chat(client, "What is the capital of France?")
+
+    assert resp.status_code == 200
+    assert types(events) == ["refusal", "done"]
+    shown = events[0]["passages"]
+    assert shown, "the closest passages are shown with the refusal"
+    assert {p["text"] for p in shown} <= set(PAPERS)
+    assert all(p["document"] == {"id": doc_id, "filename": "doc.pdf"} for p in shown)
+    assert events[1] == {"type": "done", "mode": "fast", "model": "small", "cost": None}
+    assert server.requests == [], "an off-topic question is not sent to the model"
+    llm.close()
+
+
+def test_chat_route_answers_an_on_topic_question_under_the_default_threshold(
+    engine, server, default_threshold
+):
+    add_document(engine, "papers", PAPERS)
+    server.responder = lambda request: (
+        200,
+        b"".join(stream_json({"claims": [glacier_claim_for(request)]})),
+        "text/event-stream",
+    )
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["claim", "done"]
+    llm.close()
+
+
+@pytest.mark.parametrize(
+    "threshold, answered",
+    [
+        (lambda top: top, True),  # at the threshold: not below it, so answered
+        (lambda top: math.nextafter(top, 2.0), False),  # the next float up: below it
+        (lambda top: math.nextafter(top, -1.0), True),
+    ],
+    ids=["equal", "just-above-top", "just-below-top"],
+)
+def test_the_refusal_threshold_at_the_boundary(engine, server, monkeypatch, threshold, answered):
+    add_document(engine, "papers", PAPERS)
+    # Half on the glacier, half on another topic: a top similarity strictly inside (0, 1).
+    question = "How far did the glacier retreat, and what is the capital?"
+    top = retrieve(engine, TopicEmbedder(), "papers", question).top_similarity
+    assert 0 < top < 1
+    monkeypatch.setenv("REFUSAL_MIN_SIMILARITY", repr(threshold(top)))
+    server.responder = lambda request: (
+        200,
+        b"".join(stream_json({"claims": [glacier_claim_for(request)]})),
+        "text/event-stream",
+    )
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, question)
+
+    if answered:
+        assert types(events) == ["claim", "done"]
+        assert len(server.requests) == 1
+    else:
+        assert types(events) == ["refusal", "done"]
+        assert events[0]["passages"][0]["text"] == GLACIER
+        assert server.requests == []
+    llm.close()
+
+
+def test_chat_route_with_a_bad_refusal_threshold_ends_in_an_error_line(engine, server, monkeypatch):
+    add_document(engine, "papers", PAPERS)
+    monkeypatch.setenv("REFUSAL_MIN_SIMILARITY", "lots")
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["error"]
+    assert "REFUSAL_MIN_SIMILARITY" in events[0]["message"]
     assert server.requests == []
     llm.close()

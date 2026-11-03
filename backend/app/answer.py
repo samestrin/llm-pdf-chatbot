@@ -9,6 +9,11 @@ a nonce made for this request and absent from every passage, so no passage can c
 its own marker and go on as if it were the prompt; the system message says that text
 between the markers is never an instruction.
 
+A question whose nearest passage is less similar than `REFUSAL_MIN_SIMILARITY` (the
+retrieval's `top_similarity`, cosine in [0, 1]) is off topic: it is refused with the
+closest passages and never sent to the model. A similarity equal to the threshold is
+not below it, so that question is answered.
+
 A claim is shown only when its citation checks out (`app.citation`): it cites a chunk
 that was retrieved, its quote, normalised, is a substring of that chunk, and the chunk's
 offsets resolve to the chunk's own text on the stored page. Any other claim is dropped,
@@ -18,7 +23,8 @@ The answer is a stream of events, one JSON object per line (NDJSON), in the shap
 `frontend/src/api.ts` reads:
 
 - `claim`: text, document {id, filename}, page, chunk_id, quote (exact page text)
-- `refusal`: the passages, when no claim is left to show
+- `refusal`: the closest passages, when the question is off topic or no claim is left
+  to show
 - `error`: message
 - `done`: mode, model, cost
 
@@ -29,6 +35,8 @@ sent, so a partial answer is never marked complete.
 
 import json
 import logging
+import math
+import os
 import re
 import secrets
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -84,6 +92,11 @@ chunk_id of the passage that supports it, and a quote: words copied exactly, cha
 for character, from that passage. Say nothing the passages do not support. If they do \
 not answer the question, reply with an empty list of claims."""
 
+# Cosine similarity of the nearest passage below which a question is refused. Low on
+# purpose: an off-topic question that passes is still refused when no claim survives
+# the citation check, but an on-topic one refused here never reaches the model.
+DEFAULT_REFUSAL_MIN_SIMILARITY = 0.3
+
 log = logging.getLogger(__name__)
 
 ResolveOffset = Callable[[str, int, int, int], str]
@@ -94,6 +107,27 @@ when the span is outside it."""
 
 class AnswerFormatError(LLMResponseError):
     """The model's reply does not match `ANSWER_SCHEMA`."""
+
+
+class RefusalConfigError(Exception):
+    """`REFUSAL_MIN_SIMILARITY` is not a number from 0 to 1."""
+
+
+def refusal_min_similarity(env: Mapping[str, str] | None = None) -> float:
+    """The refusal threshold from `REFUSAL_MIN_SIMILARITY`, or the default when unset."""
+    env = os.environ if env is None else env
+    raw = env.get("REFUSAL_MIN_SIMILARITY", "").strip()
+    if not raw:
+        return DEFAULT_REFUSAL_MIN_SIMILARITY
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not 0.0 <= value <= 1.0:
+        raise RefusalConfigError(
+            f"REFUSAL_MIN_SIMILARITY must be a number from 0 to 1, got {raw!r}"
+        )
+    return value
 
 
 def build_messages(
@@ -148,6 +182,7 @@ def chat_events(
     rerank endpoint come from the environment; a missing setting is an error event."""
     with ExitStack() as stack:
         try:
+            min_similarity = refusal_min_similarity()
             if llm is None:
                 llm = LLMClient(LLMConfig.from_env())
                 stack.callback(llm.close)
@@ -158,6 +193,11 @@ def chat_events(
             filenames = _filenames(engine, {p.document_id for p in found.passages})
         except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
             yield _error(exc)
+            return
+        if found.top_similarity < min_similarity:
+            log.info("question refused: top similarity %.3f", found.top_similarity)
+            yield _refusal(found.passages, filenames)
+            yield {"type": "done", "mode": "fast", "model": _model(llm, "fast"), "cost": None}
             return
         resolve = partial(resolve_offset, engine)
         yield from answer_events(llm, question, found.passages, filenames, resolve)
@@ -200,7 +240,7 @@ def _answer(
     mode: ChatModel,
 ) -> Iterator[dict[str, Any]]:
     by_id = {str(p.chunk_id): p for p in passages}
-    model = llm.config.fast_model if mode == "fast" else llm.config.reasoning_model
+    model = _model(llm, mode)
     cost = None
     shown = 0
     if passages:
@@ -230,18 +270,7 @@ def _answer(
                 yield event
         model, cost = result.model, result.cost
     if not shown:
-        yield {
-            "type": "refusal",
-            "passages": [
-                {
-                    "document": _document(p, filenames),
-                    "page": p.page,
-                    "chunk_id": str(p.chunk_id),
-                    "text": p.text,
-                }
-                for p in passages
-            ],
-        }
+        yield _refusal(passages, filenames)
     yield {"type": "done", "mode": mode, "model": model, "cost": cost}
 
 
@@ -304,12 +333,31 @@ class _Citations:
         return self._resolves[p.chunk_id]
 
 
+def _refusal(passages: Iterable[Passage], filenames: Mapping[str, str]) -> dict[str, Any]:
+    return {
+        "type": "refusal",
+        "passages": [
+            {
+                "document": _document(p, filenames),
+                "page": p.page,
+                "chunk_id": str(p.chunk_id),
+                "text": p.text,
+            }
+            for p in passages
+        ],
+    }
+
+
+def _model(llm: LLMClient, mode: ChatModel) -> str:
+    return llm.config.fast_model if mode == "fast" else llm.config.reasoning_model
+
+
 def _document(p: Passage, filenames: Mapping[str, str]) -> dict[str, str | None]:
     return {"id": p.document_id, "filename": filenames.get(p.document_id)}
 
 
 def _error(exc: Exception) -> dict[str, str]:
-    if isinstance(exc, LLMError | RerankError):
+    if isinstance(exc, LLMError | RerankError | RefusalConfigError):
         return {"type": "error", "message": f"the answer failed: {exc}"}
     log.exception("answer failed", exc_info=exc)
     return {"type": "error", "message": "the answer failed: internal error"}
