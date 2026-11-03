@@ -43,6 +43,8 @@ class FakeServer:
         self.missing_bytes = 0
         # Replies used one per request, before falling back to the fields above.
         self.queue: list[tuple[int, bytes | list[bytes], str]] = []
+        # When set, answers every request: called with its JSON, returns (status, body, type).
+        self.responder = None
         self.requests: list[dict] = []
         fake = self
 
@@ -57,7 +59,9 @@ class FakeServer:
                     }
                 )
                 time.sleep(fake.delay)
-                if fake.queue:
+                if fake.responder is not None:
+                    status, body, content_type = fake.responder(fake.requests[-1]["json"])
+                elif fake.queue:
                     status, body, content_type = fake.queue.pop(0)
                 else:
                     status, body, content_type = fake.status, fake.body, fake.content_type

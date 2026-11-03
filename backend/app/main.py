@@ -5,9 +5,10 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from app import documents
+from app import answer, documents
 from app.db import init_db
 from app.ingest import Embedder, IngestWorker, batch_size_from_env
+from app.llm import LLMClient
 
 DEFAULT_DATABASE_URL = "sqlite:///./app.db"
 
@@ -16,8 +17,12 @@ def make_engine() -> Engine:
     return create_engine(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
 
 
-def create_app(engine: Engine | None = None, embedder: Embedder | None = None) -> FastAPI:
-    """`embedder` replaces the model client from `backend/app/llm.py` (for tests)."""
+def create_app(
+    engine: Engine | None = None,
+    embedder: Embedder | None = None,
+    llm: LLMClient | None = None,
+) -> FastAPI:
+    """`embedder` and `llm` replace the model clients made from the environment (for tests)."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -31,10 +36,13 @@ def create_app(engine: Engine | None = None, embedder: Embedder | None = None) -
     app = FastAPI(title="llm-pdf-chatbot", lifespan=lifespan)
     app.state.engine = engine or make_engine()
     app.state.limits = documents.Limits.from_env()
+    app.state.embedder = embedder
+    app.state.llm = llm
     app.state.worker = IngestWorker(
         app.state.engine, app.state.limits, embedder, batch_size=batch_size_from_env()
     )
     app.include_router(documents.router)
+    app.include_router(answer.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
