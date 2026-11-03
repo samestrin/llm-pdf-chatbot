@@ -1,70 +1,47 @@
-# Getting Started with Create React App
+# llm-pdf-chatbot
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Chat with your own PDFs and get answers you can trust: every answer cites the quote and page it came from, and says plainly when the answer is not in your documents. See [VISION.md](VISION.md) for what this project is and what it will become.
 
-## Available Scripts
+## Status
 
-In the project directory, you can run:
+Early foundation. The stack — FastAPI backend, React frontend, Postgres with pgvector — runs end to end today; document upload, retrieval, and grounded answering are being built on top of it.
 
-### `npm start`
+## Requirements
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- Docker with the Compose plugin (`docker compose version`)
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Run it
 
-### `npm test`
+```bash
+docker compose up --build
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Then open <http://localhost:8080>.
 
-### `npm run build`
+Useful checks once it is up:
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- Backend health: <http://localhost:8000/health> returns `{"status":"ok"}`
+- API docs: <http://localhost:8000/docs>
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+To stop and remove the containers (keeping the database volume):
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```bash
+docker compose down
+```
 
-### `npm run eject`
+Configuration is through environment variables (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `BACKEND_PORT`, `FRONTEND_PORT`); see `docker-compose.yml` for the defaults.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Verify the stack
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```bash
+./scripts/compose-smoke.sh
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+Builds the full stack on throwaway ports, then checks the backend health endpoint, the pgvector extension, and that the frontend serves its page.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Layout
 
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- `backend/` — FastAPI API (Python, managed with uv)
+- `frontend/` — React + TypeScript UI (Vite), served by nginx
+- `db/init/` — database bootstrap (pgvector extension)
+- `scripts/compose-smoke.sh` — end-to-end smoke test
