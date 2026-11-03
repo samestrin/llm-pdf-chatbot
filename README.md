@@ -51,6 +51,10 @@ An uploaded PDF is queued and ingested in the background by a worker inside the 
 
 `GET /documents/{id}/status` reports a document's state and progress (pages read, chunks embedded), each page with the method that read it (`text_layer` or `tesseract` from OCR, `pymupdf` from the text-layer fallback) and why OCR failed on it, and under `failures` every page no method could read, with the reason. A document can be `ready` with some pages failed.
 
+## Model prices
+
+To have the cost of a fast-model call worked out, set `LLM_PRICE_FAST_PER_MTOK_IN` and `LLM_PRICE_FAST_PER_MTOK_OUT` (prices per million input and output tokens, both or neither). Without them, or when the endpoint reports no token usage, the cost is `null`, never 0. Set both to `0` for a free local model.
+
 ## Reading documents back
 
 - `GET /collections` lists every collection with its documents, each with the same status fields under `status`.
