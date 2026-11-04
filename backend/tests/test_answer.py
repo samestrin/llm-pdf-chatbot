@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from test_llm import USAGE, FakeServer, delta, make_client, sse
-from test_retrieval import GLACIER, PAPERS, ZEBRAS, TopicEmbedder, add_document
+from test_retrieval import GLACIER, PAPERS, ZEBRAS, FakeRerank, TopicEmbedder, add_document
 
 from app.answer import (
     ANSWER_SCHEMA,
@@ -402,7 +402,32 @@ def test_a_stream_that_reports_an_error_midway_gives_an_error_event(server):
     events = run(server)
 
     assert types(events) == ["error"]
-    assert "overloaded" in events[0]["message"]
+    # What the endpoint said mid-stream is its own text: logged, never sent on.
+    assert "overloaded" not in events[0]["message"]
+
+
+SECRET = "sk-live-0123 internal-host:5432"
+
+
+def test_a_model_call_that_times_out_sends_a_fixed_message(server):
+    server.delay = 1.0
+    server.stream(stream_json({"claims": [GLACIER_CLAIM]}))
+
+    events = run(server, timeout=0.2)
+
+    assert types(events) == ["error"]
+    assert events[0]["message"] == "the answer failed: the model endpoint did not answer in time"
+
+
+def test_a_failed_model_call_sends_its_status_and_logs_its_body(server, caplog):
+    server.reply({"error": SECRET}, status=502)
+
+    with caplog.at_level("WARNING", logger="app.answer"):
+        events = run(server)
+
+    assert types(events) == ["error"]
+    assert events[0]["message"] == "the answer failed: the model endpoint returned HTTP 502"
+    assert SECRET in caplog.text
 
 
 def test_words_around_the_json_reply_do_not_matter(server):
@@ -590,6 +615,70 @@ def test_chat_route_without_model_settings_ends_in_an_error_line(engine, monkeyp
 
     assert types(events) == ["error"]
     assert "LLM_BASE_URL" in events[0]["message"]
+
+
+@pytest.fixture
+def rerank():
+    fake = FakeRerank()
+    yield fake
+    fake.close()
+
+
+def test_chat_route_failed_rerank_sends_its_status_not_its_body_or_url(
+    engine, server, rerank, monkeypatch, caplog
+):
+    add_document(engine, "papers", PAPERS)
+    rerank.status = 500
+    rerank.body = SECRET.encode()
+    monkeypatch.setenv("RERANK_URL", rerank.url.replace("http://", "http://admin:hunter2@"))
+    llm = make_client(server)
+    app = create_app(engine, embedder=TopicEmbedder(), llm=llm)
+    with caplog.at_level("WARNING", logger="app.answer"), TestClient(app) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["error"]
+    assert events[0]["message"] == "the answer failed: the rerank endpoint returned HTTP 500"
+    assert SECRET in caplog.text
+    assert "hunter2" not in caplog.text
+    llm.close()
+
+
+@pytest.mark.parametrize("broken", ["unreachable", "not json"])
+def test_chat_route_rerank_failure_without_a_status_sends_a_fixed_message(
+    engine, server, rerank, monkeypatch, broken
+):
+    add_document(engine, "papers", PAPERS)
+    if broken == "unreachable":
+        monkeypatch.setenv("RERANK_URL", "http://admin:hunter2@127.0.0.1:9/rerank")
+    else:
+        rerank.body = SECRET.encode()
+        monkeypatch.setenv("RERANK_URL", rerank.url)
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["error"]
+    assert events[0]["message"] == "the answer failed: the rerank endpoint failed"
+    llm.close()
+
+
+@pytest.mark.parametrize("url", ["ftp://admin:hunter2@rerank.internal/x", "admin:hunter2@rerank"])
+def test_chat_route_with_a_bad_rerank_url_names_the_setting_not_its_value(
+    engine, server, monkeypatch, caplog, url
+):
+    add_document(engine, "papers", PAPERS)
+    monkeypatch.setenv("RERANK_URL", url)
+    llm = make_client(server)
+    app = create_app(engine, embedder=TopicEmbedder(), llm=llm)
+    with caplog.at_level("WARNING", logger="app.answer"), TestClient(app) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["error"]
+    message = events[0]["message"]
+    assert "RERANK_URL" in message
+    assert "hunter2" not in message and "rerank" not in message.replace("RERANK_URL", "")
+    assert "hunter2" not in caplog.text
+    llm.close()
 
 
 @pytest.mark.parametrize("question", ["", "   "])

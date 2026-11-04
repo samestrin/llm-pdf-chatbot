@@ -17,6 +17,7 @@ chunk, clamped to [0, 1]. That is what a refusal threshold should compare.
 
 import math
 import os
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -48,7 +49,30 @@ class RerankError(Exception):
 
 
 class RerankConfigError(RerankError):
-    """The environment does not describe a usable rerank endpoint."""
+    """The environment does not describe a usable rerank endpoint; `setting` names the variable."""
+
+    def __init__(self, setting: str, message: str):
+        self.setting = setting
+        super().__init__(message)
+
+
+class RerankHTTPError(RerankError):
+    """The rerank endpoint answered with a non-2xx status; the body is kept apart from the message."""
+
+    def __init__(self, status_code: int, body: str):
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"rerank endpoint returned HTTP {status_code}")
+
+
+# The userinfo of a URL, with or without a scheme: everything up to the last "@" before
+# the path.
+_USERINFO = re.compile(r"^((?:[^:/?#]+:)?//)?[^/?#]*@")
+
+
+def redact_url(url: str) -> str:
+    """The URL with any user name and password replaced by `***`."""
+    return _USERINFO.sub(r"\1***@", url, count=1)
 
 
 @dataclass(frozen=True)
@@ -254,7 +278,9 @@ class RerankConfig:
         except httpx.InvalidURL:
             parsed = None
         if parsed is None or parsed.scheme not in ("http", "https") or not parsed.host:
-            raise RerankConfigError(f"RERANK_URL must be an http(s) URL, got {url!r}")
+            raise RerankConfigError(
+                "RERANK_URL", f"RERANK_URL must be an http(s) URL, got {redact_url(url)!r}"
+            )
 
         raw_timeout = env.get("RERANK_TIMEOUT_SECONDS", "").strip()
         timeout = DEFAULT_RERANK_TIMEOUT_SECONDS
@@ -265,8 +291,9 @@ class RerankConfig:
                 timeout = math.nan
             if not math.isfinite(timeout) or timeout <= 0:
                 raise RerankConfigError(
+                    "RERANK_TIMEOUT_SECONDS",
                     "RERANK_TIMEOUT_SECONDS must be a positive number of seconds, "
-                    f"got {raw_timeout!r}"
+                    f"got {raw_timeout!r}",
                 )
 
         return cls(
@@ -315,9 +342,7 @@ class Reranker:
             raise RerankError(f"rerank endpoint unreachable: {exc}") from exc
 
         if not resp.is_success:
-            raise RerankError(
-                f"rerank endpoint returned HTTP {resp.status_code}: {resp.text[:500]}"
-            )
+            raise RerankHTTPError(resp.status_code, resp.text)
         if not resp.content.strip():
             raise RerankError("rerank endpoint returned an empty body")
         try:

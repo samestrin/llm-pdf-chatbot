@@ -34,7 +34,11 @@ class LLMError(Exception):
 
 
 class LLMConfigError(LLMError):
-    """The environment does not describe a usable endpoint."""
+    """The environment does not describe a usable endpoint; `setting` names the variable."""
+
+    def __init__(self, setting: str, message: str):
+        self.setting = setting
+        super().__init__(message)
 
 
 class LLMConnectionError(LLMError):
@@ -46,12 +50,12 @@ class LLMTimeoutError(LLMError):
 
 
 class LLMHTTPError(LLMError):
-    """The endpoint answered with a non-2xx status."""
+    """The endpoint answered with a non-2xx status; the body is kept apart from the message."""
 
     def __init__(self, status_code: int, body: str):
         self.status_code = status_code
         self.body = body
-        super().__init__(f"model endpoint returned HTTP {status_code}: {body[:500]}")
+        super().__init__(f"model endpoint returned HTTP {status_code}")
 
 
 class LLMResponseError(LLMError):
@@ -104,7 +108,7 @@ class LLMConfig:
         def required(name: str) -> str:
             value = env.get(name, "").strip()
             if not value:
-                raise LLMConfigError(f"{name} is not set")
+                raise LLMConfigError(name, f"{name} is not set")
             return value
 
         raw_timeout = env.get("LLM_TIMEOUT_SECONDS", "").strip()
@@ -116,7 +120,8 @@ class LLMConfig:
                 timeout = math.nan
             if not math.isfinite(timeout) or timeout <= 0:
                 raise LLMConfigError(
-                    f"LLM_TIMEOUT_SECONDS must be a positive number of seconds, got {raw_timeout!r}"
+                    "LLM_TIMEOUT_SECONDS",
+                    f"LLM_TIMEOUT_SECONDS must be a positive number of seconds, got {raw_timeout!r}",
                 )
 
         def price(name: str) -> float | None:
@@ -128,14 +133,15 @@ class LLMConfig:
             except ValueError:
                 value = math.nan
             if not math.isfinite(value) or value < 0:
-                raise LLMConfigError(f"{name} must be a price of zero or more, got {raw!r}")
+                raise LLMConfigError(name, f"{name} must be a price of zero or more, got {raw!r}")
             return value
 
         price_in = price("LLM_PRICE_FAST_PER_MTOK_IN")
         price_out = price("LLM_PRICE_FAST_PER_MTOK_OUT")
         if (price_in is None) != (price_out is None):
             raise LLMConfigError(
-                "LLM_PRICE_FAST_PER_MTOK_IN and LLM_PRICE_FAST_PER_MTOK_OUT must be set together"
+                "LLM_PRICE_FAST_PER_MTOK_IN and LLM_PRICE_FAST_PER_MTOK_OUT",
+                "LLM_PRICE_FAST_PER_MTOK_IN and LLM_PRICE_FAST_PER_MTOK_OUT must be set together",
             )
 
         return cls(

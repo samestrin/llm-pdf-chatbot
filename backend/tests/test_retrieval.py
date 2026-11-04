@@ -27,6 +27,7 @@ from app.retrieval import (
     RerankConfigError,
     Reranker,
     RerankError,
+    RerankHTTPError,
     fuse,
     retrieve,
 )
@@ -621,6 +622,38 @@ def test_rerank_config_defaults():
 def test_a_bad_rerank_url_is_rejected(url):
     with pytest.raises(RerankConfigError, match="RERANK_URL"):
         RerankConfig.from_env({"RERANK_URL": url})
+
+
+def test_a_failed_rerank_keeps_its_body_out_of_the_message(engine, embedder, rerank):
+    add_document(engine, "papers", [ZEBRAS, GLACIER])
+    rerank.status = 503
+    rerank.body = b"internal-host:5432 is down"
+
+    with pytest.raises(RerankHTTPError) as exc:
+        retrieve(engine, embedder, "papers", "zebras", reranker=rerank.client())
+
+    assert exc.value.status_code == 503
+    assert "internal-host" in exc.value.body
+    assert "internal-host" not in str(exc.value)
+    assert "HTTP 503" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ftp://admin:hunter2@rerank/x",
+        "admin:hunter2@rerank",
+        "http://admin:hunter2@",
+        "https://:hunter2@/x",
+    ],
+)
+def test_a_bad_rerank_url_is_reported_without_its_userinfo(url):
+    with pytest.raises(RerankConfigError) as exc:
+        RerankConfig.from_env({"RERANK_URL": url})
+
+    assert "RERANK_URL" in str(exc.value)
+    assert "hunter2" not in str(exc.value)
+    assert "admin" not in str(exc.value)
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "soon", "nan", "inf"])

@@ -267,6 +267,8 @@ def test_non_2xx_is_http_error(server, status):
         make_client(server).chat([])
     assert exc.value.status_code == status
     assert "nope" in exc.value.body
+    assert "nope" not in str(exc.value)
+    assert str(status) in str(exc.value)
 
 
 def test_timeout_is_timeout_error(server):

@@ -63,9 +63,26 @@ from sqlalchemy import Engine, select
 from app.citation import find_quote
 from app.db import documents
 from app.ingest import Embedder
-from app.llm import ChatModel, LLMClient, LLMConfig, LLMError, LLMResponseError
+from app.llm import (
+    ChatModel,
+    LLMClient,
+    LLMConfig,
+    LLMConfigError,
+    LLMConnectionError,
+    LLMHTTPError,
+    LLMResponseError,
+    LLMStreamError,
+    LLMTimeoutError,
+)
 from app.pages import resolve_offset
-from app.retrieval import Passage, Reranker, RerankError, retrieve
+from app.retrieval import (
+    Passage,
+    RerankConfigError,
+    Reranker,
+    RerankError,
+    RerankHTTPError,
+    retrieve,
+)
 
 ANSWER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -132,9 +149,13 @@ class AnswerFormatError(LLMResponseError):
 class RefusalConfigError(Exception):
     """`REFUSAL_MIN_SIMILARITY` is not a number from 0 to 1."""
 
+    setting = "REFUSAL_MIN_SIMILARITY"
+
 
 class HistoryConfigError(Exception):
     """`CHAT_HISTORY_TURNS` is not a whole number of zero or more."""
+
+    setting = "CHAT_HISTORY_TURNS"
 
 
 @dataclass(frozen=True)
@@ -439,10 +460,43 @@ def _document(p: Passage, filenames: Mapping[str, str]) -> dict[str, str | None]
 
 
 def _error(exc: Exception) -> dict[str, str]:
-    if isinstance(exc, LLMError | RerankError | RefusalConfigError | HistoryConfigError):
-        return {"type": "error", "message": f"the answer failed: {exc}"}
-    log.exception("answer failed", exc_info=exc)
-    return {"type": "error", "message": "the answer failed: internal error"}
+    """The error event for `exc`. What the client reads is fixed per exception class; the
+    exception's own text and any body the endpoint sent are logged here, never sent on."""
+    reason = _client_reason(exc)
+    if reason is None:
+        log.exception("answer failed", exc_info=exc)
+        return {"type": "error", "message": "the answer failed: internal error"}
+    body = getattr(exc, "body", None)
+    if body:
+        log.warning("answer failed: %s; body: %s", exc, body[:500])
+    else:
+        log.warning("answer failed: %s", exc)
+    return {"type": "error", "message": f"the answer failed: {reason}"}
+
+
+def _client_reason(exc: Exception) -> str | None:
+    """Why the answer failed, in words that hold nothing the endpoint sent and no
+    setting's value; None for an exception that is not an expected failure."""
+    match exc:
+        case LLMConfigError() | RerankConfigError() | RefusalConfigError() | HistoryConfigError():
+            return f"{exc.setting} is missing or invalid"
+        case LLMHTTPError():
+            return f"the model endpoint returned HTTP {exc.status_code}"
+        case LLMTimeoutError():
+            return "the model endpoint did not answer in time"
+        case LLMConnectionError():
+            return "the model endpoint is unreachable"
+        case LLMStreamError():
+            return "the model stream failed"
+        case AnswerFormatError():
+            return "the model reply does not match the answer format"
+        case LLMResponseError():
+            return "the model endpoint returned an unusable reply"
+        case RerankHTTPError():
+            return f"the rerank endpoint returned HTTP {exc.status_code}"
+        case RerankError():
+            return "the rerank endpoint failed"
+    return None
 
 
 def _filenames(engine: Engine, document_ids: set[str]) -> dict[str, str]:
