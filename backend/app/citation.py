@@ -14,11 +14,18 @@ normalised the same way before the quote is looked for as a substring:
   is dropped, so "re-\\ntreated", "retreated" and "forty-metre" / "fortymetre" match;
 - whitespace: each run becomes one space, and the ends are trimmed.
 
+A quote shorter than `MIN_QUOTE_CHARS` once normalised is never found: a word or two
+is a substring of nearly any chunk.
+
 Every normalised character remembers the character of the original text it came
 from, so a match maps back to an exact span of the chunk, and from there of the page.
 """
 
 import unicodedata
+
+# The shortest quote, normalised, that is checked at all. A word or two is a substring
+# of nearly any chunk, so it would show a claim as cited without showing where from.
+MIN_QUOTE_CHARS = 15
 
 _FOLD = str.maketrans(
     {
@@ -43,10 +50,11 @@ def normalise(text: str) -> str:
 def find_quote(quote: str, text: str) -> tuple[int, int] | None:
     """The span `[start, end)` of `text` where `quote` is, compared normalised.
 
-    None when the quote, normalised, is empty or is not a substring of the text.
+    None when the quote, normalised, is shorter than `MIN_QUOTE_CHARS` or is not a
+    substring of the text.
     """
     needle = normalise(quote)
-    if not needle:
+    if len(needle) < MIN_QUOTE_CHARS:
         return None
     hay = _normalised(text)
     at = "".join(c for c, _ in hay).find(needle)

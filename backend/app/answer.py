@@ -24,9 +24,9 @@ closest passages and never sent to the model. A similarity equal to the threshol
 not below it, so that question is answered.
 
 A claim is shown only when its citation checks out (`app.citation`): it cites a chunk
-that was retrieved, its quote, normalised, is a substring of that chunk, and the chunk's
-offsets resolve to the chunk's own text on the stored page. Any other claim is dropped,
-never shown as cited. The quote sent is the exact page text the quote matched.
+that was retrieved, its quote, normalised, is at least `MIN_QUOTE_CHARS` (15) characters
+and a substring of that chunk, and the chunk's offsets resolve to the chunk's own text on
+the stored page. Any other claim is dropped, never shown as cited. The quote sent is the exact page text the quote matched.
 
 The answer is a stream of events, one JSON object per line (NDJSON), in the shape
 `frontend/src/api.ts` reads:
@@ -393,11 +393,11 @@ class _Citations:
         self._resolves: dict[int, bool] = {}
 
     def quote_on_page(self, p: Passage, quote: str) -> str | None:
-        """The page text the quote matches in chunk `p`; None when it is not there, or
-        when the chunk's offsets do not resolve to the chunk's text on its page."""
+        """The page text the quote matches in chunk `p`; None when it is too short or not
+        there, or when the chunk's offsets do not resolve to the chunk's text on its page."""
         span = find_quote(quote, p.text)
         if span is None:
-            log.info("claim dropped: quote not in chunk %s", p.chunk_id)
+            log.info("claim dropped: quote too short or not in chunk %s", p.chunk_id)
             return None
         if not self._chunk_resolves(p):
             log.warning("claim dropped: chunk %s does not resolve to its page text", p.chunk_id)

@@ -1,6 +1,6 @@
 import pytest
 
-from app.citation import find_quote, normalise
+from app.citation import MIN_QUOTE_CHARS, find_quote, normalise
 
 GLACIER = "The glacier retreated forty metres last year."
 
@@ -21,7 +21,7 @@ def test_a_planted_fake_quote_is_not_found():
 def test_a_quote_across_a_ligature_is_found():
     text = "The \ufb01eld station was cut in half."
 
-    assert found("field station", text) == "\ufb01eld station"
+    assert found("field station was", text) == "\ufb01eld station was"
 
 
 def test_a_quote_across_a_line_break_hyphen_is_found():
@@ -33,8 +33,8 @@ def test_a_quote_across_a_line_break_hyphen_is_found():
 def test_a_quote_across_a_non_breaking_space_is_found():
     text = "The glacier retreated forty\u00a0metres last year."
 
-    assert found("forty metres", text) == "forty\u00a0metres"
-    assert found("forty\u00a0metres", GLACIER) == "forty metres"
+    assert found("forty metres last", text) == "forty\u00a0metres last"
+    assert found("forty\u00a0metres last", GLACIER) == "forty metres last"
 
 
 # --- Each normalisation, on both sides ---
@@ -43,22 +43,30 @@ def test_a_quote_across_a_non_breaking_space_is_found():
 @pytest.mark.parametrize(
     ("quote", "text", "expected"),
     [
-        ("THE GLACIER", GLACIER, "The glacier"),
+        ("THE GLACIER RETREATED", GLACIER, "The glacier retreated"),
         ("retreated  \n forty", GLACIER, "retreated forty"),
         ("retreated forty", "retreated\n\t forty", "retreated\n\t forty"),
-        ("  forty metres  ", GLACIER, "forty metres"),
-        ("retreated", "re\u00adtreated", "re\u00adtreated"),  # soft hyphen
-        ("retreated", "re\u200btreated", "re\u200btreated"),  # zero-width space
-        ("forty-metre", "a forty-\nmetre drop", "forty-\nmetre"),
-        ("fortymetre", "a forty-metre drop", "forty-metre"),
-        ("forty\u2011metre", "a forty-metre drop", "forty-metre"),  # non-breaking hyphen
-        ("re-\ntreated", "retreated", "retreated"),
-        ("'the station'", "\u2018the station\u2019", "\u2018the station\u2019"),
-        ('"the station"', "\u201cthe station\u201d", "\u201cthe station\u201d"),
-        ("caf\u00e9", "the cafe\u0301 shut", "cafe\u0301"),
-        ("cafe\u0301", "the caf\u00e9 shut", "caf\u00e9"),
-        ("STRASSE", "die Stra\u00dfe", "Stra\u00dfe"),
-        ("\ufb01eld", "the field", "field"),
+        ("  forty metres last  ", GLACIER, "forty metres last"),
+        ("glacier retreated", "glacier re\u00adtreated", "glacier re\u00adtreated"),  # soft hyphen
+        (
+            "glacier retreated",
+            "glacier re\u200btreated",
+            "glacier re\u200btreated",
+        ),  # zero-width space
+        ("a forty-metre drop", "a forty-\nmetre drop", "a forty-\nmetre drop"),
+        ("a fortymetre drop", "a forty-metre drop", "a forty-metre drop"),
+        (
+            "a forty\u2011metre drop",
+            "a forty-metre drop",
+            "a forty-metre drop",
+        ),  # non-breaking hyphen
+        ("glacier re-\ntreated", "the glacier retreated", "glacier retreated"),
+        ("'the station' shut", "\u2018the station\u2019 shut", "\u2018the station\u2019 shut"),
+        ('"the station" shut', "\u201cthe station\u201d shut", "\u201cthe station\u201d shut"),
+        ("met at the caf\u00e9", "they met at the cafe\u0301 by noon", "met at the cafe\u0301"),
+        ("met at the cafe\u0301", "they met at the caf\u00e9 by noon", "met at the caf\u00e9"),
+        ("WOHNT IN DER STRASSE", "er wohnt in der Stra\u00dfe", "wohnt in der Stra\u00dfe"),
+        ("the \ufb01eld station", "at the field station", "the field station"),
     ],
 )
 def test_normalised_forms_match(quote, text, expected):
@@ -95,13 +103,38 @@ def test_a_quote_that_differs_by_one_letter_is_not_found():
 
 
 def test_the_span_ends_after_the_whole_ligature_the_quote_ends_in():
-    text = "an of\ufb01ce"
+    text = "she rented an of\ufb01ce"
 
-    assert found("an of", text) == "an of"
-    assert found("an off", text) == "an of\ufb01"
+    assert found("she rented an of", text) == "she rented an of"
+    assert found("she rented an off", text) == "she rented an of\ufb01"
 
 
 def test_the_first_occurrence_is_returned():
-    text = "Forty metres. Then forty metres more."
+    text = "Forty metres down. Then forty metres down more."
 
-    assert find_quote("forty metres", text) == (0, 12)
+    assert find_quote("forty metres down", text) == (0, 17)
+
+
+# --- A quote too short to show what it cites ---
+
+
+@pytest.mark.parametrize("quote", ["the", "glacier", "forty metres", "retreated fort"])
+def test_a_quote_shorter_than_the_minimum_is_not_found(quote):
+    assert quote.lower() in GLACIER.lower()
+    assert len(normalise(quote)) < MIN_QUOTE_CHARS
+
+    assert find_quote(quote, GLACIER) is None
+
+
+def test_the_minimum_is_counted_on_the_normalised_quote():
+    # 19 characters as given, 12 once the spaces and the soft hyphen are normalised.
+    quote = "  forty   met­res  "
+
+    assert find_quote(quote, GLACIER) is None
+
+
+def test_a_quote_of_exactly_the_minimum_is_found():
+    quote = "retreated forty"
+
+    assert len(normalise(quote)) == MIN_QUOTE_CHARS == 15
+    assert found(quote, GLACIER) == "retreated forty"
