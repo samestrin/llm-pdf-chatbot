@@ -3,9 +3,11 @@ import AnswerMeta from './AnswerMeta'
 import {
   streamChat,
   type ChatEvent,
+  type ChatMode,
   type ClaimEvent,
   type DoneEvent,
   type Passage,
+  type StepEvent,
 } from './api'
 
 // pdf.js is large; load the viewer the first time a citation is opened.
@@ -13,8 +15,13 @@ const PdfViewer = lazy(() => import('./PdfViewer'))
 
 const DEFAULT_COLLECTION = 'default'
 
+const DEEP_NOTE =
+  'Deep mode uses the reasoning model: it plans sub-questions and searches for each, so it is slower and can cost more.'
+
 interface Turn {
   question: string
+  /** Deep mode's sub-questions, in the order they arrived. */
+  steps: StepEvent[]
   claims: ClaimEvent[]
   /** The closest passages of a refusal; `null` when the answer was not refused. */
   refusal: Passage[] | null
@@ -33,6 +40,8 @@ function failed(message: string | undefined): string {
 
 function apply(turn: Turn, event: ChatEvent): Turn {
   switch (event.type) {
+    case 'step':
+      return { ...turn, steps: [...turn.steps, event] }
     case 'claim':
       return { ...turn, claims: [...turn.claims, event] }
     case 'refusal':
@@ -82,14 +91,32 @@ function Refusal({ passages }: { passages: Passage[] }) {
   )
 }
 
+function Steps({ steps }: { steps: StepEvent[] }) {
+  return (
+    <ol aria-label="Steps" className="steps">
+      {steps.map((step, i) => (
+        <li key={i}>
+          {step.question}{' '}
+          <span className="step-pages">
+            {step.pages?.length
+              ? step.pages.map((p) => `${p.document.filename}, p. ${p.page}`).join('; ')
+              : 'no pages found'}
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void }) {
   // A finished answer with no claim, no refusal and no error would show nothing.
   const empty =
     turn.done !== null && turn.claims.length === 0 && turn.refusal === null && !turn.error
   return (
     <article aria-label="Answer" aria-busy={turn.streaming}>
+      {turn.steps.length > 0 && <Steps steps={turn.steps} />}
       {turn.claims.length > 0 && (
-        <ul>
+        <ul aria-label="Claims">
           {turn.claims.map((claim, i) => (
             <li key={i}>
               {claim.text} <Citation claim={claim} onOpen={onOpen} />
@@ -110,6 +137,7 @@ function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void 
 export default function Chat({ collections }: { collections: string[] }) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
+  const [mode, setMode] = useState<ChatMode>('fast')
   const [turns, setTurns] = useState<Turn[]>([])
   const [opened, setOpened] = useState<ClaimEvent | null>(null)
   const controller = useRef<AbortController | null>(null)
@@ -135,6 +163,7 @@ export default function Chat({ collections }: { collections: string[] }) {
       ...all,
       {
         question: q,
+        steps: [],
         claims: [],
         refusal: null,
         error: null,
@@ -148,7 +177,7 @@ export default function Chat({ collections }: { collections: string[] }) {
     const abort = new AbortController()
     controller.current = abort
     try {
-      for await (const event of streamChat(collection, q, abort.signal)) {
+      for await (const event of streamChat(collection, q, abort.signal, mode)) {
         if (abort.signal.aborted) break
         update((t) => apply(t, event))
         if (event.type === 'done' || event.type === 'error') return
@@ -204,6 +233,15 @@ export default function Chat({ collections }: { collections: string[] }) {
           Ask a question{' '}
           <input value={question} onChange={(e) => setQuestion(e.target.value)} />
         </label>{' '}
+        <label>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={mode === 'deep'}
+            onChange={(e) => setMode(e.target.checked ? 'deep' : 'fast')}
+          />{' '}
+          Deep mode
+        </label>{' '}
         <button type="submit" disabled={!question.trim() || !collection || streaming}>
           Ask
         </button>
@@ -215,6 +253,7 @@ export default function Chat({ collections }: { collections: string[] }) {
             </button>
           </>
         )}
+        {mode === 'deep' && <p className="deep-note">{DEEP_NOTE}</p>}
         {collections.length === 0 && <p>Upload a document to ask about it.</p>}
       </form>
     </section>

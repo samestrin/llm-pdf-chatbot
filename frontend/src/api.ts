@@ -145,6 +145,13 @@ export interface ErrorEvent {
   message: string
 }
 
+/** Deep mode only, before any claim: a sub-question and the pages its search found. */
+export interface StepEvent {
+  type: 'step'
+  question: string
+  pages: { document: CitedDocument; page: number }[]
+}
+
 export interface DoneEvent {
   type: 'done'
   mode: string
@@ -152,7 +159,10 @@ export interface DoneEvent {
   cost: number | null
 }
 
-export type ChatEvent = ClaimEvent | RefusalEvent | ErrorEvent | DoneEvent
+export type ChatEvent = StepEvent | ClaimEvent | RefusalEvent | ErrorEvent | DoneEvent
+
+/** `deep` has the reasoning model plan sub-questions and search for each. */
+export type ChatMode = 'fast' | 'deep'
 
 function parseEvent(line: string): ChatEvent {
   try {
@@ -169,11 +179,12 @@ export async function* streamChat(
   collection: string,
   question: string,
   signal?: AbortSignal,
+  mode: ChatMode = 'fast',
 ): AsyncGenerator<ChatEvent> {
   const res = await fetch(`${API_BASE}/collections/${encodeURIComponent(collection)}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, mode: 'fast' }),
+    body: JSON.stringify({ question, mode }),
     signal,
   })
   if (!res.ok) throw new Error(await errorDetail(res))

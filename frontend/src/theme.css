@@ -136,7 +136,9 @@ blockquote {
   font-size: 0.85em;
 }
 
-.answer-meta {
+.answer-meta,
+.step-pages,
+.deep-note {
   color: var(--muted);
   font-size: 0.85em;
 }

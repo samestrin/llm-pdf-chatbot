@@ -156,6 +156,21 @@ describe('streamChat', () => {
     ])
   })
 
+  it('asks in deep mode when told to, and yields step events', async () => {
+    const step = {
+      type: 'step',
+      question: 'How long is the lease?',
+      pages: [{ document: { id: 'd', filename: 'f.pdf' }, page: 3 }],
+    }
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(new Response(streamOf(`${JSON.stringify(step)}\n`))),
+    )
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await collect(streamChat('c', 'q', undefined, 'deep'))).toEqual([step])
+    expect(fetch.mock.calls[0][1]?.body).toBe(JSON.stringify({ question: 'q', mode: 'deep' }))
+  })
+
   it('throws the backend detail when the request is rejected', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(Response.json({ detail: 'bad mode' }, { status: 422 })))
     await expect(collect(streamChat('c', 'q'))).rejects.toThrow('bad mode')

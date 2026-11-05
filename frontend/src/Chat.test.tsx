@@ -98,6 +98,49 @@ describe('Chat', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
   })
 
+  it('asks in deep mode with the switch on, and lists each step as it arrives', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(
+        ndjson(
+          {
+            type: 'step',
+            question: 'How long is the lease?',
+            pages: [
+              { document: { id: 'd1', filename: 'lease.pdf' }, page: 3 },
+              { document: { id: 'd2', filename: 'addendum.pdf' }, page: 1 },
+            ],
+          },
+          { type: 'step', question: 'Is there parking?', pages: [] },
+          { type: 'refusal', passages: [] },
+          { type: 'done', mode: 'deep', model: 'r', cost: 0.5 },
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetch)
+    render(<Chat collections={['default']} />)
+
+    const deep = screen.getByRole('switch', { name: 'Deep mode' })
+    expect(screen.queryByText(/uses the reasoning model/)).toBeNull()
+    fireEvent.click(deep)
+    expect(screen.getByText(/uses the reasoning model/)).toBeInTheDocument()
+    ask('compare')
+
+    const answer = await screen.findByRole('article', { name: 'Answer' })
+    expect(await within(answer).findByLabelText('Answer details')).toHaveTextContent(
+      'deep · r · $0.5',
+    )
+    const steps = within(within(answer).getByRole('list', { name: 'Steps' })).getAllByRole(
+      'listitem',
+    )
+    expect(steps.map((s) => s.textContent)).toEqual([
+      'How long is the lease? lease.pdf, p. 3; addendum.pdf, p. 1',
+      'Is there parking? no pages found',
+    ])
+    expect(fetch.mock.calls[0][1]?.body).toBe(
+      JSON.stringify({ question: 'compare', mode: 'deep' }),
+    )
+  })
+
   it('cannot ask with no collection', () => {
     render(<Chat collections={[]} />)
     fireEvent.change(screen.getByLabelText('Ask a question'), { target: { value: 'q' } })
