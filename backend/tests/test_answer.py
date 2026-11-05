@@ -1144,8 +1144,9 @@ def test_chat_route_answers_in_fast_mode(engine, server, body):
     llm.close()
 
 
-@pytest.mark.parametrize("mode", ["deep", "reasoning", "FAST", "", None, 1])
-def test_chat_route_rejects_any_mode_but_fast(engine, server, mode):
+# `deep` is accepted since epic 05 (tests/test_deep.py); every other mode is turned down.
+@pytest.mark.parametrize("mode", ["reasoning", "FAST", "DEEP", "", None, 1])
+def test_chat_route_rejects_any_mode_but_fast_and_deep(engine, server, mode):
     llm = make_client(server)
     with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
         resp, _ = post_chat(client, {"question": "How far?", "mode": mode})

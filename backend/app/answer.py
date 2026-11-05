@@ -15,8 +15,13 @@ assistant messages before the passages and the question. Retrieval and citations
 the current question and its passages only; history helps read the question, it is never
 cited.
 
-The request's `mode` is `fast` (the default) or the route turns it down with 422 before
-any model call; `ANSWER_MODES` is the one place that lists the modes accepted.
+The request's `mode` is `fast` (the default) or `deep`, or the route turns it down with
+422 before any model call; `ANSWER_MODES` is the one place that lists the modes accepted.
+In `deep` mode the reasoning model plans the question as sub-questions (`app.deep`),
+each is retrieved on its own and sent as a `step` event, and the answer is written by the
+reasoning model from all their passages. It goes through the same citation check and
+refusal, but its claims are sent only once the whole reply has checked out and the run is
+within its time and token limits: a deep run that fails sends no claim at all.
 
 A question whose nearest passage is less similar than `REFUSAL_MIN_SIMILARITY` (the
 retrieval's `top_similarity`, cosine in [0, 1]) is off topic: it is refused with the
@@ -35,9 +40,11 @@ the stored page. Any other claim is dropped, never shown as cited. The quote sen
 The answer is a stream of events, one JSON object per line (NDJSON), in the shape
 `frontend/src/api.ts` reads:
 
+- `step` (deep mode only, before any claim): question (the sub-question), pages (each
+  {document {id, filename}, page} its retrieval found, once each)
 - `claim`: text, document {id, filename}, page, chunk_id, quote (exact page text)
-- `refusal`: the closest passages, when the question is off topic or no claim is left
-  to show
+- `refusal`: the closest passages, when the question is off topic (in deep mode: every
+  sub-question is) or no claim is left to show
 - `error`: message
 - `done`: mode, model, cost
 
@@ -66,9 +73,20 @@ from sqlalchemy import Engine, select
 
 from app.citation import find_quote
 from app.db import documents
+from app.deep import (
+    DeepBudgetError,
+    DeepConfigError,
+    DeepSettings,
+    DeepTimeoutError,
+    PlanFormatError,
+    RunLimits,
+    deep_settings,
+    plan,
+)
 from app.ingest import Embedder
 from app.llm import (
     ChatModel,
+    ChatResult,
     LLMClient,
     LLMConfig,
     LLMConfigError,
@@ -85,6 +103,7 @@ from app.retrieval import (
     Reranker,
     RerankError,
     RerankHTTPError,
+    Retrieval,
     retrieve,
 )
 
@@ -140,8 +159,8 @@ DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE = 1.0
 DEFAULT_CHAT_HISTORY_TURNS = 6
 
 # The modes a question may be asked in, and the model each one asks.
-AnswerMode = Literal["fast"]
-ANSWER_MODES: dict[str, ChatModel] = {"fast": "fast"}
+AnswerMode = Literal["fast", "deep"]
+ANSWER_MODES: dict[str, ChatModel] = {"fast": "fast", "deep": "reasoning"}
 
 log = logging.getLogger(__name__)
 
@@ -232,17 +251,22 @@ def build_messages(
         for p in passages
     ]
     user = "Passages:\n\n" + "\n\n".join(blocks) + f"\n\nQuestion: {question}"
-    earlier = []
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT.format(nonce=nonce)},
+        *_history_messages(history),
+        {"role": "user", "content": user},
+    ]
+
+
+def _history_messages(history: Iterable[Turn]) -> list[dict[str, str]]:
+    """The earlier turns as user and assistant messages."""
+    messages = []
     for turn in history:
-        earlier += [
+        messages += [
             {"role": "user", "content": turn.question},
             {"role": "assistant", "content": turn.answer},
         ]
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT.format(nonce=nonce)},
-        *earlier,
-        {"role": "user", "content": user},
-    ]
+    return messages
 
 
 def answer_events(
@@ -286,26 +310,33 @@ def chat_events(
             history = list(history)
             cap = chat_history_turns()
             history = history[-cap:] if cap else []
+            settings = deep_settings() if mode == "deep" else None
             if llm is None:
                 llm = LLMClient(LLMConfig.from_env())
                 stack.callback(llm.close)
             reranker = Reranker.from_env()
             if reranker is not None:
                 stack.callback(reranker.close)
-            found = retrieve(engine, embedder or llm, collection, question, reranker=reranker)
-            filenames = _filenames(engine, {p.document_id for p in found.passages})
+            if settings is None:
+                found = retrieve(engine, embedder or llm, collection, question, reranker=reranker)
+                filenames = _filenames(engine, {p.document_id for p in found.passages})
         except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
             yield _error(exc)
             return
-        # A coverage of 0.0 is no keyword hit at all, never a strong one.
-        coverage = found.top_keyword_coverage
-        strong_keyword_hit = coverage > 0.0 and coverage >= min_keyword_coverage
-        if found.top_similarity < min_similarity and not strong_keyword_hit:
-            log.info(
-                "question refused: top similarity %.3f, keyword coverage %.3f",
-                found.top_similarity,
-                found.top_keyword_coverage,
+        if settings is not None:
+            yield from _deep_events(
+                engine,
+                collection,
+                question,
+                llm,
+                embedder or llm,
+                reranker,
+                history,
+                settings,
+                partial(_off_topic, min_similarity, min_keyword_coverage),
             )
+            return
+        if _off_topic(min_similarity, min_keyword_coverage, found):
             yield _refusal(found.passages, filenames)
             yield {"type": "done", "mode": mode, "model": _model(llm, mode), "cost": None}
             return
@@ -313,6 +344,112 @@ def chat_events(
         yield from answer_events(
             llm, question, found.passages, filenames, resolve, mode=mode, history=history
         )
+
+
+def _off_topic(min_similarity: float, min_keyword_coverage: float, found: Retrieval) -> bool:
+    """Whether the retrieval is too far from its question to be answered."""
+    # A coverage of 0.0 is no keyword hit at all, never a strong one.
+    coverage = found.top_keyword_coverage
+    strong_keyword_hit = coverage > 0.0 and coverage >= min_keyword_coverage
+    if found.top_similarity < min_similarity and not strong_keyword_hit:
+        log.info(
+            "question refused: top similarity %.3f, keyword coverage %.3f",
+            found.top_similarity,
+            found.top_keyword_coverage,
+        )
+        return True
+    return False
+
+
+def _deep_events(
+    engine: Engine,
+    collection: str,
+    question: str,
+    llm: LLMClient,
+    embedder: Embedder,
+    reranker: Reranker | None,
+    history: list[Turn],
+    settings: DeepSettings,
+    off_topic: Callable[[Retrieval], bool],
+) -> Iterator[dict[str, Any]]:
+    """The events of a deep answer; see the module docstring and `app.deep`."""
+    try:
+        limits = RunLimits(settings)
+        sub_questions, planned = plan(llm, question, _history_messages(history), limits)
+        passages: dict[int, Passage] = {}
+        filenames: dict[str, str] = {}
+        answerable = False
+        for sub_question in sub_questions:
+            limits.check_time()
+            found = retrieve(engine, embedder, collection, sub_question, reranker=reranker)
+            limits.check_time()
+            new_ids = {p.document_id for p in found.passages} - filenames.keys()
+            filenames.update(_filenames(engine, new_ids))
+            answerable = not off_topic(found) or answerable
+            for p in found.passages:
+                passages.setdefault(p.chunk_id, p)
+            yield _step(sub_question, found.passages, filenames)
+        found_passages = list(passages.values())
+        if not answerable:
+            yield _refusal(found_passages, filenames)
+            # Only the plan was asked for: its cost is the run's.
+            yield {"type": "done", "mode": "deep", "model": planned.model, "cost": planned.cost}
+            return
+        citations = _Citations(partial(resolve_offset, engine))
+        yield from _deep_answer(
+            llm, question, found_passages, filenames, citations, history, limits, planned
+        )
+    except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
+        yield _error(exc)
+
+
+def _deep_answer(
+    llm: LLMClient,
+    question: str,
+    passages: list[Passage],
+    filenames: Mapping[str, str],
+    citations: "_Citations",
+    history: list[Turn],
+    limits: RunLimits,
+    planned: ChatResult,
+) -> Iterator[dict[str, Any]]:
+    """The claims of the deep answer, held back until the whole reply has checked out and
+    the run is within its limits, then the refusal or done that ends it."""
+    by_id = {str(p.chunk_id): p for p in passages}
+    messages = build_messages(question, passages, history=history)
+    limits.check_time()
+    stream = llm.chat_stream(messages, model="reasoning", json_schema=ANSWER_SCHEMA)
+    try:
+        for _ in stream:
+            limits.check_time()
+    finally:
+        stream.close()
+    result = stream.result
+    limits.spend(messages, result)
+    limits.check_time()
+    claims = result.data.get("claims") if isinstance(result.data, dict) else None
+    if not isinstance(claims, list):
+        raise AnswerFormatError("model reply has no list of claims")
+    events = [_claim_event(raw, by_id, filenames, citations) for raw in claims]
+    shown = [event for event in events if event is not None]
+    yield from shown
+    if not shown:
+        yield _refusal(passages, filenames)
+    costs = (planned.cost, result.cost)
+    cost = None if None in costs else sum(costs)
+    yield {"type": "done", "mode": "deep", "model": result.model, "cost": cost}
+
+
+def _step(
+    sub_question: str, passages: Iterable[Passage], filenames: Mapping[str, str]
+) -> dict[str, Any]:
+    pages: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for p in passages:
+        if (p.document_id, p.page) not in seen:
+            seen.add((p.document_id, p.page))
+            pages.append({"document": _document(p, filenames), "page": p.page})
+    return {"type": "step", "question": sub_question, "pages": pages}
 
 
 router = APIRouter()
@@ -506,8 +643,20 @@ def _client_reason(exc: Exception) -> str | None:
     """Why the answer failed, in words that hold nothing the endpoint sent and no
     setting's value; None for an exception that is not an expected failure."""
     match exc:
-        case LLMConfigError() | RerankConfigError() | RefusalConfigError() | HistoryConfigError():
+        case (
+            LLMConfigError()
+            | RerankConfigError()
+            | RefusalConfigError()
+            | HistoryConfigError()
+            | DeepConfigError()
+        ):
             return f"{exc.setting} is missing or invalid"
+        case DeepBudgetError():
+            return f"the deep run used more than DEEP_MAX_TOKENS ({exc.limit}) tokens"
+        case DeepTimeoutError():
+            return f"the deep run took longer than DEEP_TIMEOUT_SECONDS ({exc.limit:g} s)"
+        case PlanFormatError():
+            return "the model's plan does not match its format"
         case LLMHTTPError():
             return f"the model endpoint returned HTTP {exc.status_code}"
         case LLMTimeoutError():
