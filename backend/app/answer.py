@@ -21,7 +21,11 @@ any model call; `ANSWER_MODES` is the one place that lists the modes accepted.
 A question whose nearest passage is less similar than `REFUSAL_MIN_SIMILARITY` (the
 retrieval's `top_similarity`, cosine in [0, 1]) is off topic: it is refused with the
 closest passages and never sent to the model. A similarity equal to the threshold is
-not below it, so that question is answered.
+not below it, so that question is answered. The exception is a strong keyword hit: when
+one keyword-matched chunk holds at least `REFUSAL_MIN_KEYWORD_COVERAGE` of the question's
+words (the retrieval's `top_keyword_coverage`, default 1.0: all of them), the question
+is answered however weak its vector similarity, so a question asked by an ID or a rare
+term the embedding model does not know still reaches the model.
 
 A claim is shown only when its citation checks out (`app.citation`): it cites a chunk
 that was retrieved, its quote, normalised, is at least `MIN_QUOTE_CHARS` (15) characters
@@ -127,6 +131,11 @@ not answer the question, reply with an empty list of claims."""
 # the citation check, but an on-topic one refused here never reaches the model.
 DEFAULT_REFUSAL_MIN_SIMILARITY = 0.3
 
+# Share of the question's words one keyword-matched chunk must hold for the question to
+# be answered below that similarity. All of them by default: a question such as "What is
+# XK42?" names the term the chunk holds, and a weaker hit is left to the vector threshold.
+DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE = 1.0
+
 # Earlier turns of the conversation sent to the model with each question.
 DEFAULT_CHAT_HISTORY_TURNS = 6
 
@@ -147,9 +156,11 @@ class AnswerFormatError(LLMResponseError):
 
 
 class RefusalConfigError(Exception):
-    """`REFUSAL_MIN_SIMILARITY` is not a number from 0 to 1."""
+    """A refusal threshold is not a number from 0 to 1; `setting` names the variable."""
 
-    setting = "REFUSAL_MIN_SIMILARITY"
+    def __init__(self, setting: str, message: str):
+        self.setting = setting
+        super().__init__(message)
 
 
 class HistoryConfigError(Exception):
@@ -168,18 +179,27 @@ class Turn:
 
 def refusal_min_similarity(env: Mapping[str, str] | None = None) -> float:
     """The refusal threshold from `REFUSAL_MIN_SIMILARITY`, or the default when unset."""
+    return _unit_setting(env, "REFUSAL_MIN_SIMILARITY", DEFAULT_REFUSAL_MIN_SIMILARITY)
+
+
+def refusal_min_keyword_coverage(env: Mapping[str, str] | None = None) -> float:
+    """The keyword coverage that overrides a refusal, from `REFUSAL_MIN_KEYWORD_COVERAGE`,
+    or the default when unset."""
+    return _unit_setting(env, "REFUSAL_MIN_KEYWORD_COVERAGE", DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE)
+
+
+def _unit_setting(env: Mapping[str, str] | None, name: str, default: float) -> float:
+    """The number from 0 to 1 in the variable `name`, or `default` when unset."""
     env = os.environ if env is None else env
-    raw = env.get("REFUSAL_MIN_SIMILARITY", "").strip()
+    raw = env.get(name, "").strip()
     if not raw:
-        return DEFAULT_REFUSAL_MIN_SIMILARITY
+        return default
     try:
         value = float(raw)
     except ValueError:
         value = math.nan
     if not 0.0 <= value <= 1.0:
-        raise RefusalConfigError(
-            f"REFUSAL_MIN_SIMILARITY must be a number from 0 to 1, got {raw!r}"
-        )
+        raise RefusalConfigError(name, f"{name} must be a number from 0 to 1, got {raw!r}")
     return value
 
 
@@ -262,6 +282,7 @@ def chat_events(
     with ExitStack() as stack:
         try:
             min_similarity = refusal_min_similarity()
+            min_keyword_coverage = refusal_min_keyword_coverage()
             history = list(history)
             cap = chat_history_turns()
             history = history[-cap:] if cap else []
@@ -276,8 +297,15 @@ def chat_events(
         except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
             yield _error(exc)
             return
-        if found.top_similarity < min_similarity:
-            log.info("question refused: top similarity %.3f", found.top_similarity)
+        # A coverage of 0.0 is no keyword hit at all, never a strong one.
+        coverage = found.top_keyword_coverage
+        strong_keyword_hit = coverage > 0.0 and coverage >= min_keyword_coverage
+        if found.top_similarity < min_similarity and not strong_keyword_hit:
+            log.info(
+                "question refused: top similarity %.3f, keyword coverage %.3f",
+                found.top_similarity,
+                found.top_keyword_coverage,
+            )
             yield _refusal(found.passages, filenames)
             yield {"type": "done", "mode": mode, "model": _model(llm, mode), "cost": None}
             return

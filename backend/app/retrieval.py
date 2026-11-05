@@ -12,7 +12,11 @@ to the fusion order quietly. Without `RERANK_URL` the fusion order is the answer
 
 Fusion and rerank scores are not comparable from one question to the next, so each
 result also carries `top_similarity`: the cosine similarity of the collection's nearest
-chunk, clamped to [0, 1]. That is what a refusal threshold should compare.
+chunk, clamped to [0, 1]. That is what a refusal threshold should compare. It misses a
+question asked by an ID or a rare term the embedding model does not know, so each result
+also carries `top_keyword_coverage`: the largest share of the question's distinct words
+(lexemes, as the keyword search reads them) that one keyword-matched chunk holds, in
+[0, 1], 0.0 when the keyword search found nothing.
 """
 
 import math
@@ -100,6 +104,9 @@ class Retrieval:
     passages: list[Passage]
     # Similarity of the nearest chunk in the collection, 0.0 when there is none.
     top_similarity: float
+    # Largest share of the question's lexemes one keyword-matched chunk holds, 0.0 when
+    # the keyword search found nothing.
+    top_keyword_coverage: float
     reranked: bool
 
 
@@ -158,8 +165,10 @@ def retrieve(
         )
 
         keyword_ids: list[int] = []
-        tsquery = _any_word_query(conn, question)
-        if tsquery is not None:
+        top_keyword_coverage = 0.0
+        lexemes = _lexemes(conn, question)
+        if lexemes:
+            tsquery = _any_word_query(lexemes)
             query = cast(tsquery, TSQUERY)
             keyword_ids = list(
                 conn.execute(
@@ -175,6 +184,13 @@ def retrieve(
                     .limit(candidates)
                 ).scalars()
             )
+            for held in conn.execute(
+                select(func.tsvector_to_array(chunk_text_search.c.tsv)).where(
+                    chunk_text_search.c.chunk_id.in_(keyword_ids)
+                )
+            ).scalars():
+                share = len(lexemes & set(held)) / len(lexemes)
+                top_keyword_coverage = max(top_keyword_coverage, share)
 
         scores = fuse([vector_ids, keyword_ids])
         rows = {
@@ -229,27 +245,34 @@ def retrieve(
     return Retrieval(
         passages=passages[:limit],
         top_similarity=top_similarity,
+        top_keyword_coverage=top_keyword_coverage,
         reranked=reranker is not None,
     )
 
 
-def _any_word_query(conn, question: str) -> str | None:
-    """A tsquery, as text, that matches a chunk holding any word of the question.
-
-    The question is normalised as the chunks were (stemmed, stop words dropped), then its
-    lexemes are joined with OR. Each lexeme is quoted, so nothing the user typed is read
-    as query syntax. None when no word is left.
-    """
-    lexemes = conn.execute(
-        select(
-            func.tsvector_to_array(
-                func.to_tsvector(literal_column(f"'{TEXT_SEARCH_CONFIG}'::regconfig"), question)
+def _lexemes(conn, question: str) -> set[str]:
+    """The distinct words of the question, normalised as the chunks were (stemmed, stop
+    words dropped); empty when no word is left."""
+    return set(
+        conn.execute(
+            select(
+                func.tsvector_to_array(
+                    func.to_tsvector(literal_column(f"'{TEXT_SEARCH_CONFIG}'::regconfig"), question)
+                )
             )
-        )
-    ).scalar_one()
-    if not lexemes:
-        return None
-    return " | ".join("'" + lex.replace("\\", "\\\\").replace("'", "''") + "'" for lex in lexemes)
+        ).scalar_one()
+    )
+
+
+def _any_word_query(lexemes: set[str]) -> str:
+    """A tsquery, as text, that matches a chunk holding any of the lexemes.
+
+    The lexemes are joined with OR. Each is quoted, so nothing the user typed is read as
+    query syntax.
+    """
+    return " | ".join(
+        "'" + lex.replace("\\", "\\\\").replace("'", "''") + "'" for lex in sorted(lexemes)
+    )
 
 
 def _similarity(distance: float | None) -> float | None:

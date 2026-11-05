@@ -7,11 +7,20 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from test_llm import USAGE, FakeServer, delta, make_client, sse
-from test_retrieval import GLACIER, PAPERS, ZEBRAS, FakeRerank, TopicEmbedder, add_document
+from test_retrieval import (
+    GLACIER,
+    PAPERS,
+    PART,
+    ZEBRAS,
+    FakeRerank,
+    TopicEmbedder,
+    add_document,
+)
 
 from app.answer import (
     ANSWER_SCHEMA,
     DEFAULT_CHAT_HISTORY_TURNS,
+    DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE,
     DEFAULT_REFUSAL_MIN_SIMILARITY,
     HistoryConfigError,
     RefusalConfigError,
@@ -19,6 +28,7 @@ from app.answer import (
     answer_events,
     build_messages,
     chat_history_turns,
+    refusal_min_keyword_coverage,
     refusal_min_similarity,
 )
 from app.db import init_db, pages
@@ -799,6 +809,146 @@ def test_chat_route_with_a_bad_refusal_threshold_ends_in_an_error_line(engine, s
 
     assert types(events) == ["error"]
     assert "REFUSAL_MIN_SIMILARITY" in events[0]["message"]
+    assert server.requests == []
+    llm.close()
+
+
+# --- A strong keyword hit is not refused, however weak the vector similarity ---
+
+
+class UnrelatedEmbedder:
+    """Embeds every question on a topic no chunk has: vector similarity 0 to all of them."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0, 0.0, 0.0, 1.0, 0.0] for _ in texts]
+
+
+def cite_part(request):
+    user = request["messages"][1]["content"]
+    cid = re.search(r"chunk_id=(\d+)>>>\n" + re.escape(PART), user).group(1)
+    reply = {
+        "claims": [claim("Replace it before the inspection.", cid, "before the next inspection")]
+    }
+    return 200, b"".join(stream_json(reply)), "text/event-stream"
+
+
+def test_the_keyword_coverage_threshold_has_a_committed_default():
+    assert refusal_min_keyword_coverage({}) == DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE
+    assert DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE == 1.0
+    assert (
+        refusal_min_keyword_coverage({"REFUSAL_MIN_KEYWORD_COVERAGE": " "})
+        == DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE
+    )
+
+
+@pytest.mark.parametrize("raw, value", [("0.5", 0.5), (" 0 ", 0.0), ("1", 1.0)])
+def test_the_keyword_coverage_threshold_is_read_from_the_environment(raw, value):
+    assert refusal_min_keyword_coverage({"REFUSAL_MIN_KEYWORD_COVERAGE": raw}) == value
+
+
+@pytest.mark.parametrize("raw", ["all", "-0.1", "1.5", "nan", "inf"])
+def test_a_keyword_coverage_threshold_outside_zero_to_one_is_a_config_error(raw):
+    with pytest.raises(RefusalConfigError, match="REFUSAL_MIN_KEYWORD_COVERAGE"):
+        refusal_min_keyword_coverage({"REFUSAL_MIN_KEYWORD_COVERAGE": raw})
+
+
+@pytest.fixture
+def default_coverage(monkeypatch):
+    monkeypatch.delenv("REFUSAL_MIN_KEYWORD_COVERAGE", raising=False)
+
+
+def test_chat_route_answers_a_strong_keyword_only_hit(
+    engine, server, default_threshold, default_coverage
+):
+    add_document(engine, "papers", PAPERS)
+    question = "When is XK42 replaced?"
+    found = retrieve(engine, UnrelatedEmbedder(), "papers", question)
+    assert found.top_similarity < DEFAULT_REFUSAL_MIN_SIMILARITY, "a keyword-only hit"
+    assert found.top_keyword_coverage == 1.0
+    server.responder = cite_part
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=UnrelatedEmbedder(), llm=llm)) as client:
+        _, events = chat(client, question)
+
+    assert types(events) == ["claim", "done"]
+    assert events[0]["quote"] == "before the next inspection"
+    assert len(server.requests) == 1
+    llm.close()
+
+
+def test_chat_route_refuses_a_weak_keyword_only_hit(
+    engine, server, default_threshold, default_coverage
+):
+    add_document(engine, "papers", PAPERS)
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=UnrelatedEmbedder(), llm=llm)) as client:
+        # "france" is in no chunk: the best keyword hit holds two of the three words.
+        _, events = chat(client, "Is XK42 replaced in France?")
+
+    assert types(events) == ["refusal", "done"]
+    assert events[0]["passages"][0]["text"] == PART
+    assert server.requests == []
+    llm.close()
+
+
+@pytest.mark.parametrize(
+    "threshold, answered",
+    [
+        (lambda c: c, True),  # at the threshold: strong, so answered
+        (lambda c: math.nextafter(c, 2.0), False),
+        (lambda c: math.nextafter(c, -1.0), True),
+    ],
+    ids=["equal", "just-above-coverage", "just-below-coverage"],
+)
+def test_the_keyword_coverage_threshold_at_the_boundary(
+    engine, server, monkeypatch, default_threshold, threshold, answered
+):
+    add_document(engine, "papers", PAPERS)
+    question = "Is XK42 replaced in France?"
+    coverage = retrieve(engine, UnrelatedEmbedder(), "papers", question).top_keyword_coverage
+    assert 0 < coverage < 1
+    monkeypatch.setenv("REFUSAL_MIN_KEYWORD_COVERAGE", repr(threshold(coverage)))
+    server.responder = cite_part
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=UnrelatedEmbedder(), llm=llm)) as client:
+        _, events = chat(client, question)
+
+    if answered:
+        assert types(events) == ["claim", "done"]
+        assert len(server.requests) == 1
+    else:
+        assert types(events) == ["refusal", "done"]
+        assert server.requests == []
+    llm.close()
+
+
+def test_a_zero_keyword_coverage_threshold_still_refuses_without_a_keyword_hit(
+    engine, server, monkeypatch, default_threshold
+):
+    add_document(engine, "papers", PAPERS)
+    monkeypatch.setenv("REFUSAL_MIN_KEYWORD_COVERAGE", "0")
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, "What is the capital of France?")
+
+    assert types(events) == ["refusal", "done"]
+    assert server.requests == []
+    llm.close()
+
+
+def test_chat_route_with_a_bad_keyword_coverage_threshold_ends_in_an_error_line(
+    engine, server, monkeypatch
+):
+    add_document(engine, "papers", PAPERS)
+    monkeypatch.setenv("REFUSAL_MIN_KEYWORD_COVERAGE", "most")
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        _, events = chat(client, "How far did the glacier retreat?")
+
+    assert types(events) == ["error"]
+    assert events[0]["message"] == (
+        "the answer failed: REFUSAL_MIN_KEYWORD_COVERAGE is missing or invalid"
+    )
     assert server.requests == []
     llm.close()
 

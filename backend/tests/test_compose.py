@@ -58,6 +58,7 @@ def test_env_example_lists_all_six_variables():
 # Optional settings of the answer: empty unless set, so the backend's defaults apply.
 ANSWER_VARS = [
     "REFUSAL_MIN_SIMILARITY",
+    "REFUSAL_MIN_KEYWORD_COVERAGE",
     "CHAT_HISTORY_TURNS",
     "LLM_PRICE_FAST_PER_MTOK_IN",
     "LLM_PRICE_FAST_PER_MTOK_OUT",

@@ -358,6 +358,40 @@ def test_top_similarity_is_not_changed_by_the_rerank(engine, embedder, rerank):
     assert reranked.top_similarity == plain.top_similarity
 
 
+# --- Keyword coverage of the best keyword hit, so a strong one is not refused ---
+
+
+@pytest.mark.parametrize(
+    "question, coverage",
+    [
+        ("When is XK42 replaced?", 1.0),  # xk42, replac: both in the part chunk
+        ("Is XK42 replaced in France?", 2 / 3),  # franc is in no chunk
+        ("zebras on the glacier", 1 / 2),  # each word is in a different chunk
+        ("What is the capital of France?", 0.0),  # no keyword hit
+        ("what is the", 0.0),  # stop words only: no keyword search
+    ],
+)
+def test_keyword_coverage_is_the_share_of_the_question_words_one_chunk_holds(
+    engine, embedder, question, coverage
+):
+    add_document(engine, "papers", PAPERS)
+
+    result = retrieve(engine, embedder, "papers", question)
+
+    assert result.top_keyword_coverage == pytest.approx(coverage)
+
+
+def test_keyword_coverage_of_an_empty_collection_is_zero(engine, embedder):
+    assert retrieve(engine, embedder, "nowhere", "XK42").top_keyword_coverage == 0.0
+
+
+def test_keyword_coverage_counts_only_ready_documents(engine, embedder):
+    add_document(engine, "papers", [GLACIER])
+    add_document(engine, "papers", [PART], state="processing")
+
+    assert retrieve(engine, embedder, "papers", "XK42").top_keyword_coverage == 0.0
+
+
 # --- Optional rerank through RERANK_URL ---
 
 
