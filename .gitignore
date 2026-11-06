@@ -129,6 +129,6 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-# private plans (samestrin/llm-pdf-chatbot-planning)
+# private plans (kept in a separate repo)
 .planning/
 .coverage

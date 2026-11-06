@@ -1,0 +1,52 @@
+name: public-ready
+
+# Secrets anywhere in history. The internal-name and fixture-licence checks are
+# backend/tests/test_public_ready.py, run by ci.yml. A finding here fails the check and is
+# listed (redacted) in the run summary; history is never rewritten here (the owner decides).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-ready-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: 8.30.1
+
+jobs:
+  gitleaks:
+    # The repo variable CI_RUNS_ON (a JSON list of labels) picks the runner; unset means GitHub-hosted.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/gitleaks" gitleaks
+      - name: Scan full history
+        run: |
+          report="$RUNNER_TEMP/gitleaks/report.json"
+          if "$RUNNER_TEMP/gitleaks/gitleaks" git --redact --verbose --log-opts=--all \
+              --report-format json --report-path "$report" .; then
+            echo "gitleaks: no leaks in $(git rev-list --all --count) commits." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## gitleaks findings (redacted)"
+              echo
+              echo "| Rule | File | Line | Commit |"
+              echo "|---|---|---|---|"
+              jq -r '.[] | "| \(.RuleID) | \(.File) | \(.StartLine) | \(.Commit[0:12]) |"' "$report"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
