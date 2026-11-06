@@ -1,0 +1,110 @@
+name: release
+
+# A pull request and a dispatch only build the two images. A v* tag builds them
+# and, once the tagged commit's checks are green, pushes both to GHCR.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Push the images (only from a v* tag)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 30
+    env:
+      TAG: run-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build both images
+        run: |
+          docker build -t "llm-pdf-chatbot-backend:$TAG" backend
+          docker build -t "llm-pdf-chatbot-frontend:$TAG" frontend
+      - name: Save both images
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        run: |
+          mkdir -p images
+          docker save "llm-pdf-chatbot-backend:$TAG" -o images/backend.tar
+          docker save "llm-pdf-chatbot-frontend:$TAG" -o images/frontend.tar
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        with:
+          name: images
+          path: images
+          retention-days: 1
+      # The runner may be shared; leave no run images behind.
+      - name: Remove the local images
+        if: always()
+        run: docker image rm -f "llm-pdf-chatbot-backend:$TAG" "llm-pdf-chatbot-frontend:$TAG" || true
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      checks: read
+      packages: write
+    env:
+      TAG: run-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      # A per-run login, so the token never lands in a shared runner's config.
+      - run: echo "DOCKER_CONFIG=$RUNNER_TEMP/docker-config" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - name: Check the tagged commit's check runs are green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/commits/${{ github.sha }}/check-runs" \
+            --jq '.check_runs[]' | python3 scripts/check_runs_green.py "$GITHUB_RUN_ID"
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
+          path: images
+      - name: Load both images
+        run: |
+          docker load -i images/backend.tar
+          docker load -i images/frontend.tar
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push both images
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${GITHUB_REF_NAME#v}"
+          for image in backend frontend; do
+            for tag in "$version" latest; do
+              docker tag "llm-pdf-chatbot-$image:$TAG" "$repo-$image:$tag"
+            done
+          done
+          for image in backend frontend; do
+            for tag in "$version" latest; do
+              docker push "$repo-$image:$tag"
+            done
+          done
+      - name: Remove the local images and login
+        if: always()
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${GITHUB_REF_NAME#v}"
+          for image in backend frontend; do
+            docker image rm -f "llm-pdf-chatbot-$image:$TAG" \
+              "$repo-$image:$version" "$repo-$image:latest" || true
+          done
+          rm -rf "$DOCKER_CONFIG"
