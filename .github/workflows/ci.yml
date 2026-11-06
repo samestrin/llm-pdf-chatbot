@@ -10,9 +10,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  actionlint:
+    # The repo variable CI_RUNS_ON (a JSON list of labels) picks the runner; unset means GitHub-hosted.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 && ./actionlint -color
+
   backend:
-    # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.
-    runs-on: [self-hosted, gauntlet]
+    # The repo variable CI_RUNS_ON (a JSON list of labels) picks the runner; unset means GitHub-hosted.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     services:
       # The Postgres tests fail without it; they never skip.
@@ -48,8 +57,8 @@ jobs:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/test
 
   frontend:
-    # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.
-    runs-on: [self-hosted, gauntlet]
+    # The repo variable CI_RUNS_ON (a JSON list of labels) picks the runner; unset means GitHub-hosted.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     defaults:
       run:

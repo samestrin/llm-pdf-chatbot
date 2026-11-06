@@ -11,8 +11,8 @@ concurrency:
 
 jobs:
   compose-smoke:
-    # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.
-    runs-on: [self-hosted, gauntlet]
+    # The repo variable CI_RUNS_ON (a JSON list of labels) picks the runner; unset means GitHub-hosted.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     timeout-minutes: 20
     env:
       COMPOSE_PROJECT_NAME: pdf-chatbot-smoke-${{ github.run_id }}
