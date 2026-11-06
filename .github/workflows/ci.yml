@@ -42,6 +42,10 @@ jobs:
       - run: uv run pytest
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/test
+      # The eval's subset: no scanned PDF (CI has no OCR), answered by the fake model.
+      - run: uv run python -m evals.run --subset
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/test
 
   frontend:
     # Self-hosted while the repo is private; switch to GitHub-hosted at the public flip.
