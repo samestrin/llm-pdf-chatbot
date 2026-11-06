@@ -1,0 +1,617 @@
+{
+  "date": "2026-11-06",
+  "run": "full",
+  "judge": false,
+  "model": "deepseek-v4.1-flash",
+  "embedding_model": "Qwen/Qwen3-Embedding-4B",
+  "pdfs": [
+    "contract-wmf-grant-agreement.pdf",
+    "manual-usace-hazus-user-guide.pdf",
+    "report-cbo-work-in-2018.pdf",
+    "scanned-lbj-desk-diary-1954-10-13.pdf",
+    "table-cbo-monthly-budget-review-2018-12.pdf"
+  ],
+  "questions": 40,
+  "scores": {
+    "answer_accuracy": {
+      "score": 0.8333333333333334,
+      "hits": 25,
+      "total": 30
+    },
+    "citation_precision": {
+      "score": 0.9642857142857143,
+      "hits": 27,
+      "total": 28
+    },
+    "refusal_accuracy": {
+      "score": 0.95,
+      "hits": 38,
+      "total": 40
+    },
+    "cost_usd": null,
+    "errors": 0
+  },
+  "judge_cost_usd": null,
+  "results": [
+    {
+      "id": "contract-01",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-02",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-03",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-04",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-05",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 3
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-06",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 4
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-07",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "contract-wmf-grant-agreement.pdf",
+          "page": 5
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "contract-08",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "contract-09",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "manual-01",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": false,
+      "key_facts_present": false,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-02",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": false,
+      "key_facts_present": false,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-03",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-04",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-05",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": false,
+      "key_facts_present": false,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 3
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-06",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 6
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-07",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "manual-usace-hazus-user-guide.pdf",
+          "page": 7
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "manual-08",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "manual-09",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "report-01",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "report-cbo-work-in-2018.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "report-02",
+      "answerable": true,
+      "refused": true,
+      "error": null,
+      "refusal_correct": false,
+      "correct": false,
+      "key_facts_present": false,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "report-03",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "report-cbo-work-in-2018.pdf",
+          "page": 3
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "report-04",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "report-cbo-work-in-2018.pdf",
+          "page": 4
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "report-05",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "report-cbo-work-in-2018.pdf",
+          "page": 7
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "report-06",
+      "answerable": true,
+      "refused": true,
+      "error": null,
+      "refusal_correct": false,
+      "correct": false,
+      "key_facts_present": false,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "report-07",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "report-cbo-work-in-2018.pdf",
+          "page": 8
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "report-08",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "report-09",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "table-01",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "table-cbo-monthly-budget-review-2018-12.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "table-02",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "table-cbo-monthly-budget-review-2018-12.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "table-03",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "table-cbo-monthly-budget-review-2018-12.pdf",
+          "page": 2
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "table-04",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "table-cbo-monthly-budget-review-2018-12.pdf",
+          "page": 3
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "table-05",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "table-cbo-monthly-budget-review-2018-12.pdf",
+          "page": 4
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "table-06",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "table-cbo-monthly-budget-review-2018-12.pdf",
+          "page": 4
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "table-07",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "table-08",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "scanned-01",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "scanned-lbj-desk-diary-1954-10-13.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "scanned-02",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "scanned-lbj-desk-diary-1954-10-13.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "scanned-03",
+      "answerable": true,
+      "refused": false,
+      "error": null,
+      "refusal_correct": true,
+      "correct": true,
+      "key_facts_present": true,
+      "cited": [
+        {
+          "pdf": "scanned-lbj-desk-diary-1954-10-13.pdf",
+          "page": 1
+        }
+      ],
+      "cost": null
+    },
+    {
+      "id": "scanned-04",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    },
+    {
+      "id": "scanned-05",
+      "answerable": false,
+      "refused": true,
+      "error": null,
+      "refusal_correct": true,
+      "correct": null,
+      "key_facts_present": null,
+      "cited": [],
+      "cost": null
+    }
+  ]
+}
