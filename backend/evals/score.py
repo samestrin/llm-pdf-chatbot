@@ -61,6 +61,10 @@ class Ratio:
     def as_json(self) -> dict[str, Any]:
         return {"score": self.value, "hits": self.hits, "total": self.total}
 
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "Ratio":
+        return cls(data["hits"], data["total"])
+
 
 @dataclass(frozen=True)
 class Scores:
@@ -80,6 +84,18 @@ class Scores:
             "cost_usd": self.cost,
             "errors": self.errors,
         }
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "Scores":
+        """The scores of a results file's `scores` (`as_json`), without the per-question
+        results."""
+        return cls(
+            accuracy=Ratio.from_json(data["answer_accuracy"]),
+            citation_precision=Ratio.from_json(data["citation_precision"]),
+            refusal_accuracy=Ratio.from_json(data["refusal_accuracy"]),
+            cost=data["cost_usd"],
+            errors=data["errors"],
+        )
 
 
 def key_facts_present(q: Question, answer: str) -> bool:
