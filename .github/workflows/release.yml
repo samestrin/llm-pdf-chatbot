@@ -1,7 +1,9 @@
 name: release
 
 # A pull request and a dispatch only build the two images. A v* tag builds them
-# and, once the tagged commit's checks are green, pushes both to GHCR.
+# and, once the tagged commit's checks are green, creates the GitHub release with
+# the version's CHANGELOG.md section as its notes. The images are pushed to GHCR
+# only when the repository variable PUBLISH_IMAGES is 'true' (unset by default).
 on:
   push:
     tags: ["v*"]
@@ -9,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Push the images (only from a v* tag)
+        description: Push the images (only from a v* tag, with PUBLISH_IMAGES on)
         type: boolean
         default: false
 
@@ -37,13 +39,13 @@ jobs:
           docker build -t "llm-pdf-chatbot-backend:$TAG" backend
           docker build -t "llm-pdf-chatbot-frontend:$TAG" frontend
       - name: Save both images
-        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        if: vars.PUBLISH_IMAGES == 'true' && startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         run: |
           mkdir -p images
           docker save "llm-pdf-chatbot-backend:$TAG" -o images/backend.tar
           docker save "llm-pdf-chatbot-frontend:$TAG" -o images/frontend.tar
       - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        if: vars.PUBLISH_IMAGES == 'true' && startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         with:
           name: images
           path: images
@@ -55,7 +57,7 @@ jobs:
 
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+    if: vars.PUBLISH_IMAGES == 'true' && startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     timeout-minutes: 20
     permissions:
@@ -108,3 +110,26 @@ jobs:
               "$repo-$image:$version" "$repo-$image:latest" || true
           done
           rm -rf "$DOCKER_CONFIG"
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tagged commit's check runs are green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/commits/${{ github.sha }}/check-runs" \
+            --jq '.check_runs[]' | python3 scripts/check_runs_green.py "$GITHUB_RUN_ID"
+      - name: Extract the release notes from CHANGELOG.md
+        run: python3 scripts/changelog_section.py "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"

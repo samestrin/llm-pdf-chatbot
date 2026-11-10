@@ -55,13 +55,15 @@ def test_triggers_are_v_tags_pull_requests_and_a_dispatch_that_does_not_publish(
     assert publish["default"] is False
 
 
-def test_packages_write_only_on_the_publish_job():
+def test_only_release_writes_contents_and_only_publish_writes_packages():
     assert WORKFLOW["permissions"] == {"contents": "read"}
+    assert {"publish", "release"} <= JOBS.keys()
     for name, job in JOBS.items():
         perms = job.get("permissions", {})
         if name == "publish":
-            assert perms.get("packages") == "write"
-            assert perms.get("contents") == "read"
+            assert perms == {"contents": "read", "checks": "read", "packages": "write"}
+        elif name == "release":
+            assert perms == {"contents": "write", "checks": "read"}
         else:
             assert perms in ({}, {"contents": "read"}), name
 
@@ -74,16 +76,60 @@ def test_build_job_builds_both_images_and_pushes_nothing():
     assert "docker login" not in text
 
 
-def test_publish_needs_the_build_and_runs_only_on_a_v_tag():
+PUBLISH_GATE = "vars.PUBLISH_IMAGES == 'true'"
+
+
+def test_publish_needs_the_build_and_runs_only_on_a_v_tag_with_publish_images_on():
     publish = JOBS["publish"]
     assert publish["needs"] == "build"
     condition = publish["if"]
+    assert PUBLISH_GATE in condition
     assert "startsWith(github.ref, 'refs/tags/v')" in condition
     assert "pull_request" not in condition
     assert "inputs.publish" in condition
     for name, job in JOBS.items():
         if name != "publish":
             assert "docker push" not in "\n".join(s.get("run", "") for s in job["steps"])
+
+
+def test_build_saves_and_uploads_the_images_only_with_publish_images_on():
+    steps = JOBS["build"]["steps"]
+    save = next(s for s in steps if "docker save" in s.get("run", ""))
+    upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact"))
+    for step in (save, upload):
+        assert PUBLISH_GATE in step["if"]
+        assert "startsWith(github.ref, 'refs/tags/v')" in step["if"]
+    # Every pull request still builds both images.
+    builds = [s for s in steps if "docker build" in s.get("run", "")]
+    assert builds and all("if" not in s for s in builds)
+    assert "if" not in JOBS["build"]
+
+
+def test_release_needs_the_build_and_runs_only_on_a_v_tag_push():
+    release = JOBS["release"]
+    assert release["needs"] == "build"
+    assert release["timeout-minutes"] > 0
+    condition = release["if"]
+    assert "github.event_name == 'push'" in condition
+    assert "startsWith(github.ref, 'refs/tags/v')" in condition
+    assert "&&" in condition and "||" not in condition
+    assert "PUBLISH_IMAGES" not in condition
+    assert "inputs.publish" not in condition
+    for name, job in JOBS.items():
+        if name != "release":
+            assert "gh release" not in "\n".join(s.get("run", "") for s in job["steps"])
+
+
+def test_release_checks_the_tagged_commit_is_green_before_creating_the_release():
+    runs = [s.get("run", "") for s in JOBS["release"]["steps"]]
+    gate = next(i for i, r in enumerate(runs) if "check_runs_green.py" in r)
+    notes = next(i for i, r in enumerate(runs) if "changelog_section.py" in r)
+    create = next(i for i, r in enumerate(runs) if "gh release create" in r)
+    assert gate < notes <= create
+    publish_runs = [s.get("run", "") for s in JOBS["publish"]["steps"]]
+    assert runs[gate] in publish_runs, "release must run the same gate as publish"
+    assert '"${GITHUB_REF_NAME#v}"' in runs[notes]
+    assert re.search(r'gh release create "\$GITHUB_REF_NAME"[^\n]*--notes-file', runs[create])
 
 
 def test_publish_checks_the_tagged_commit_is_green_before_pushing():
