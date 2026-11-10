@@ -76,6 +76,14 @@ export async function deleteDocument(id: string): Promise<void> {
   if (!res.ok) throw new Error(await errorDetail(res))
 }
 
+/** Delete an empty collection; the backend refuses one that still has documents (409). */
+export async function deleteCollection(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/collections/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(await errorDetail(res))
+}
+
 /** Upload with XHR, because fetch cannot report upload progress. */
 export function uploadDocument(
   collection: string,

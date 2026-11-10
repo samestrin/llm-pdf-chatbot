@@ -19,7 +19,8 @@ import pymupdf
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
-from sqlalchemy import Engine, delete, insert, select
+from sqlalchemy import Engine, delete, exists, insert, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from app.db import collections, documents, ingestion_status
@@ -127,29 +128,38 @@ def upload_document(
 
         filename = display_name(file.filename)
         final_path = stored_path(limits, document_id)
-        collection_id = get_or_create_collection(engine, collection)
-        try:
-            with engine.begin() as conn:
-                conn.execute(
-                    insert(documents).values(
-                        id=document_id,
-                        collection_id=collection_id,
-                        filename=filename,
-                        size_bytes=size,
-                        page_count=pages,
+        # Deleting a collection's last document removes the collection, so the collection
+        # found here can be gone before the row goes in. The insert then fails on its foreign
+        # key before the file moves, and is tried once more against the collection made anew.
+        for attempt in range(2):
+            collection_id = get_or_create_collection(engine, collection)
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        insert(documents).values(
+                            id=document_id,
+                            collection_id=collection_id,
+                            filename=filename,
+                            size_bytes=size,
+                            page_count=pages,
+                        )
                     )
-                )
-                conn.execute(
-                    insert(ingestion_status).values(
-                        document_id=document_id, state="queued", pages_total=pages
+                    conn.execute(
+                        insert(ingestion_status).values(
+                            document_id=document_id, state="queued", pages_total=pages
+                        )
                     )
-                )
-                # Inside the transaction: if the rename fails, the row is rolled back.
-                tmp_path.replace(final_path)
-        except BaseException:
-            # The commit failed after the rename: no row points at the file, so remove it.
-            final_path.unlink(missing_ok=True)
-            raise
+                    # Inside the transaction: if the rename fails, the row is rolled back.
+                    tmp_path.replace(final_path)
+                break
+            except IntegrityError:
+                final_path.unlink(missing_ok=True)
+                if attempt or not tmp_path.exists():
+                    raise
+            except BaseException:
+                # The commit failed after the rename: no row points at the file, so remove it.
+                final_path.unlink(missing_ok=True)
+                raise
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -228,8 +238,8 @@ def status_fields(row, page_rows) -> dict:
     description=(
         "Every collection by name, each with its documents in upload order. A document has "
         "its display file name, page count, size and, under `status`, the same status fields "
-        "as `GET /documents/{document_id}/status`. A collection whose documents were all "
-        f"deleted is listed with none. {NO_AUTH_NOTE}"
+        "as `GET /documents/{document_id}/status`. Deleting a collection's last document "
+        f"removes the collection, so a listed collection normally has documents. {NO_AUTH_NOTE}"
     ),
 )
 def list_collections(request: Request) -> list[dict]:
@@ -342,16 +352,65 @@ def document_page(request: Request, document_id: str, page: int) -> dict:
     status_code=204,
     description=(
         "Delete a document: its stored file, its row, and (by foreign-key cascade) every row "
-        f"derived from it. {NO_AUTH_NOTE}"
+        "derived from it. When it was the last document of its collection, the collection is "
+        f"removed too. {NO_AUTH_NOTE}"
     ),
 )
 def delete_document(request: Request, document_id: str) -> Response:
     limits: Limits = request.app.state.limits
     with request.app.state.engine.begin() as conn:
-        deleted = conn.execute(delete(documents).where(documents.c.id == document_id)).rowcount
-        if not deleted:
+        collection_id = conn.execute(
+            delete(documents)
+            .where(documents.c.id == document_id)
+            .returning(documents.c.collection_id)
+        ).scalar()
+        if collection_id is None:
             raise HTTPException(404, "document not found")
+        _delete_collection_if_empty(conn, collection_id)
         # The id matched a row, so it is one we generated and safe in a path. Unlinking inside
         # the transaction means a file that cannot be removed leaves its row in place too.
         stored_path(limits, document_id).unlink(missing_ok=True)
+    return Response(status_code=204)
+
+
+def _delete_collection_if_empty(conn: Connection, collection_id: int) -> bool:
+    """Delete the collection when it has no documents; True when it was deleted.
+
+    The row lock waits for an upload that is inserting into the collection right now, and
+    the `NOT EXISTS` then sees its document, so a concurrent upload keeps the collection.
+    """
+    conn.execute(
+        select(collections.c.id).where(collections.c.id == collection_id).with_for_update()
+    )
+    return bool(
+        conn.execute(
+            delete(collections).where(
+                collections.c.id == collection_id,
+                ~exists().where(documents.c.collection_id == collection_id),
+            )
+        ).rowcount
+    )
+
+
+@router.delete(
+    "/collections/{collection}",
+    status_code=204,
+    responses={404: {"description": "No such collection"}, 409: {"description": "Not empty"}},
+    description=(
+        "Delete an empty collection by name. A collection that still has documents is never "
+        "deleted here (409 `collection is not empty`): delete its documents first, and the "
+        f"last delete removes the collection. An unknown name returns 404. {NO_AUTH_NOTE}"
+    ),
+)
+def delete_collection(
+    request: Request, collection: Annotated[str, PathParam(min_length=1, max_length=200)]
+) -> Response:
+    with request.app.state.engine.begin() as conn:
+        collection_id = conn.execute(
+            select(collections.c.id).where(collections.c.name == collection)
+        ).scalar()
+        if collection_id is None:
+            raise HTTPException(404, "collection not found")
+        if not _delete_collection_if_empty(conn, collection_id):
+            raise HTTPException(409, "collection is not empty")
     return Response(status_code=204)

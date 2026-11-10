@@ -406,7 +406,12 @@ def test_a_pdf_that_does_not_ingest_stops_the_run(postgres_engine, tmp_path, mon
     blank.save(tmp_path / "blank.pdf")
     init_db(postgres_engine)
 
-    with pytest.raises(RuntimeError, match="blank.pdf did not ingest: no page could be read"):
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape(
+            "blank.pdf did not ingest: This PDF has no text layer (a scan or blank pages); OCR is off"
+        ),
+    ):
         ingest(postgres_engine, ["blank.pdf"], tmp_path, FakeEmbedder())
 
 

@@ -47,7 +47,7 @@ test.describe('documents panel', () => {
     const panel = documentsPanel(page)
     await expect(panel.getByRole('heading', { name: 'No documents yet' })).toBeVisible()
     await expect(panel).toContainText(
-      'Choose a PDF above and press Upload. Once it is read, ask about it in the chat.',
+      'Drop a PDF on this panel or choose one above. Once it is read, ask about it in the chat.',
     )
     await expect(panel.getByText('No documents.')).toHaveCount(0)
   })
@@ -104,7 +104,6 @@ test.describe('documents panel', () => {
 
     const panel = documentsPanel(page)
     await panel.locator('input[type=file]').setInputFiles(SAMPLE_PDF_PATH)
-    await panel.getByRole('button', { name: 'Upload' }).click()
     await expect(panel.getByRole('alert')).toHaveText('storage is full')
     await panel.getByRole('button', { name: 'Retry upload' }).click()
 

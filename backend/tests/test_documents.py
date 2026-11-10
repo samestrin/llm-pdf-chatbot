@@ -261,6 +261,7 @@ def test_route_docs_state_there_is_no_auth(client):
     for path, method in [
         ("/collections/{collection}/documents", "post"),
         ("/documents/{document_id}", "delete"),
+        ("/collections/{collection}", "delete"),
     ]:
         assert "no auth" in schema["paths"][path][method]["description"].lower()
 
@@ -332,15 +333,97 @@ def test_list_shows_failed_pages_per_document(client):
     assert [f["page"] for f in by_id[partly["id"]]["failures"]] == [2]
 
 
-def test_list_keeps_a_collection_whose_documents_were_deleted(client):
+def test_deleting_the_last_document_removes_its_collection(any_db_client):
+    client = any_db_client
     doc_id = upload(client, make_pdf()).json()["id"]
     client.app.state.worker.join()
-    client.delete(f"/documents/{doc_id}")
+
+    assert client.delete(f"/documents/{doc_id}").status_code == 204
+
+    assert client.get("/collections").json() == []
+    # The name is free again: an upload straight after creates it anew.
+    again = upload(client, make_pdf())
+    assert again.status_code == 201
+    client.app.state.worker.join()
+    (papers,) = client.get("/collections").json()
+    assert papers["name"] == "papers"
+    assert [d["id"] for d in papers["documents"]] == [again.json()["id"]]
+
+
+def test_deleting_one_of_two_documents_keeps_the_collection(any_db_client):
+    client = any_db_client
+    a = upload(client, make_pdf(), filename="a.pdf").json()
+    b = upload(client, make_pdf(), filename="b.pdf").json()
+    client.app.state.worker.join()
+
+    assert client.delete(f"/documents/{a['id']}").status_code == 204
 
     (papers,) = client.get("/collections").json()
-
     assert papers["name"] == "papers"
-    assert papers["documents"] == []
+    assert [d["id"] for d in papers["documents"]] == [b["id"]]
+
+
+def add_empty_collection(engine, name: str) -> None:
+    """An empty collection, as one left behind before empty collections were removed."""
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO collections (name) VALUES (:name)"), {"name": name})
+
+
+def test_delete_an_empty_collection_returns_204(any_db_client, db_engine):
+    client = any_db_client
+    add_empty_collection(db_engine, "smoke")
+    assert [c["name"] for c in client.get("/collections").json()] == ["smoke"]
+
+    resp = client.delete("/collections/smoke")
+
+    assert resp.status_code == 204
+    assert client.get("/collections").json() == []
+
+
+def test_delete_an_unknown_collection_returns_404(client):
+    resp = client.delete("/collections/nowhere")
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "collection not found"}
+
+
+def test_delete_a_collection_with_documents_returns_409_and_keeps_them(any_db_client):
+    client = any_db_client
+    doc = upload(client, make_pdf()).json()
+    client.app.state.worker.join()
+
+    resp = client.delete("/collections/papers")
+
+    assert resp.status_code == 409
+    assert resp.json() == {"detail": "collection is not empty"}
+    (papers,) = client.get("/collections").json()
+    assert [d["id"] for d in papers["documents"]] == [doc["id"]]
+
+
+def test_upload_survives_its_collection_being_removed_under_it(client, engine, monkeypatch):
+    """A delete of the collection's last document can land between the upload's
+    collection lookup and its insert; the upload makes the collection again."""
+    import app.documents as documents_module
+
+    original = documents_module.get_or_create_collection
+    calls = []
+
+    def racing(engine_, name):
+        found = original(engine_, name)
+        if not calls:
+            with engine_.begin() as conn:
+                conn.execute(text("DELETE FROM collections WHERE id = :id"), {"id": found})
+        calls.append(name)
+        return found
+
+    monkeypatch.setattr(documents_module, "get_or_create_collection", racing)
+
+    resp = upload(client, make_pdf())
+
+    assert resp.status_code == 201
+    assert len(calls) == 2
+    client.app.state.worker.join()
+    (papers,) = client.get("/collections").json()
+    assert [d["id"] for d in papers["documents"]] == [resp.json()["id"]]
 
 
 def test_list_is_empty_with_no_collections(client):

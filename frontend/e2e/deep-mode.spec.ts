@@ -77,23 +77,27 @@ test('deep mode shows its note before the run, the steps as they arrive, and the
 
   const answer = page.getByRole('article', { name: 'Answer' })
   const steps = answer.getByRole('list', { name: 'Steps' }).getByRole('listitem')
-  await expect(steps).toHaveText(['How long is the lease? lease.pdf, p. 3; lease.pdf, p. 4'])
+  await expect(steps).toHaveText(['How long is the lease? p. 3; p. 4'])
   await expect(answer).toHaveAttribute('aria-busy', 'true')
   await expect(answer.getByLabel('Answer details')).toHaveCount(0)
   expect(sent).toEqual([{ question, mode: 'deep' }])
 
   await next()
   await expect(steps).toHaveText([
-    'How long is the lease? lease.pdf, p. 3; lease.pdf, p. 4',
-    'How long is the addendum? addendum.pdf, p. 1',
+    'How long is the lease? 1 · p. 3; 1 · p. 4',
+    'How long is the addendum? 2 · p. 1',
   ])
   await expect(answer.getByLabel('Answer details')).toHaveCount(0)
 
   await next()
   await expect(answer).toHaveAttribute('aria-busy', 'false')
   await expect(answer.getByRole('list', { name: 'Claims' }).getByRole('listitem')).toHaveText([
-    'The lease runs two years. lease.pdf, p. 3',
-    'The addendum adds one year. addendum.pdf, p. 1',
+    'The lease runs two years. 1 · p. 3',
+    'The addendum adds one year. 2 · p. 1',
+  ])
+  await expect(answer.getByRole('list', { name: 'Sources' }).getByRole('listitem')).toHaveText([
+    '1 lease.pdf',
+    '2 addendum.pdf',
   ])
   // The steps stay, in the order they came.
   await expect(steps).toHaveCount(2)
@@ -103,7 +107,7 @@ test('deep mode shows its note before the run, the steps as they arrive, and the
   await expect(answer.getByRole('alert')).toHaveCount(0)
 })
 
-test('a deep run with a null cost shows cost unknown, never 0', async ({ page, api, request }) => {
+test('a deep run with a null cost shows no cost, never 0', async ({ page, api, request }) => {
   const { question, next } = await scripted(page, api, request, [
     [step('Which document is newer?', [lease, 1], [addendum, 1])],
     [claim('The addendum is newer.', addendum, 1), done(null)],
@@ -114,11 +118,11 @@ test('a deep run with a null cost shows cost unknown, never 0', async ({ page, a
 
   const answer = page.getByRole('article', { name: 'Answer' })
   await expect(answer.getByRole('list', { name: 'Steps' }).getByRole('listitem')).toHaveText([
-    'Which document is newer? lease.pdf, p. 1; addendum.pdf, p. 1',
+    'Which document is newer? 1 · p. 1; 2 · p. 1',
   ])
   await next()
   const meta = answer.getByLabel('Answer details')
-  await expect(meta).toHaveText('deep · reasoning-model · cost unknown')
+  await expect(meta).toHaveText('deep · reasoning-model')
   await expect(meta).not.toContainText('0')
 })
 
@@ -166,8 +170,9 @@ test('a step with no pages says nothing was found, and markup in it is shown as 
   const answer = page.getByRole('article', { name: 'Answer' })
   await expect(answer.getByRole('list', { name: 'Steps' }).getByRole('listitem')).toHaveText([
     `What about <b>parking</b>? ${xss} no pages found`,
-    `And the deposit? ${xss}.pdf, p. 2`,
+    'And the deposit? p. 2',
   ])
+  await expect(answer).toContainText(`Source: ${xss}.pdf`)
   await next()
   await expect(answer).toContainText('The documents do not answer this.')
   await expect(answer.locator('b, img')).toHaveCount(0)

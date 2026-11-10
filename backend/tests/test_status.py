@@ -107,7 +107,10 @@ def test_document_no_page_could_be_read_is_failed_with_every_page_listed(start):
     body = client.get(f"/documents/{doc_id}/status").json()
 
     assert body["state"] == "failed"
-    assert body["error"] == "no page could be read"
+    # OCR is off and no page has a text layer, so the reason names the scan and OCR.
+    assert body["error"] == (
+        "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)"
+    )
     assert (body["pages_total"], body["pages_read"], body["pages_failed"]) == (2, 0, 2)
     assert body["failures"] == [
         {"page": 1, "reason": NO_TEXT_LAYER, "ocr_error": None},

@@ -15,14 +15,15 @@ describe('ThemeToggle', () => {
   it('starts from the system scheme', () => {
     systemPrefers(true)
     render(<ThemeToggle />)
-    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true')
+    // The button names what it does next: in dark it offers light.
+    expect(screen.getByRole('button', { name: 'Light theme' })).not.toHaveAttribute('aria-pressed')
   })
 
   it('a saved choice beats the system scheme', () => {
     systemPrefers(true)
     localStorage.setItem('theme', 'light')
     render(<ThemeToggle />)
-    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Dark theme' })).not.toHaveAttribute('aria-pressed')
   })
 
   it('saves the choice and sets it on the page', () => {
@@ -31,5 +32,9 @@ describe('ThemeToggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dark theme' }))
     expect(localStorage.getItem('theme')).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
+    // The label flips so the way back is clear.
+    fireEvent.click(screen.getByRole('button', { name: 'Light theme' }))
+    expect(localStorage.getItem('theme')).toBe('light')
+    expect(screen.getByRole('button', { name: 'Dark theme' })).toBeInTheDocument()
   })
 })

@@ -4,16 +4,16 @@ import {
   streamChat,
   type ChatEvent,
   type ChatMode,
+  type CitedDocument,
   type ClaimEvent,
   type DoneEvent,
   type Passage,
   type StepEvent,
 } from './api'
+import ThinkingIndicator from './ThinkingIndicator'
 
 // pdf.js is large; load the viewer the first time a citation is opened.
 const PdfViewer = lazy(() => import('./PdfViewer'))
-
-const DEFAULT_COLLECTION = 'default'
 
 const DEEP_NOTE =
   'Deep mode uses the reasoning model: it plans sub-questions and searches for each, so it is slower and can cost more.'
@@ -60,17 +60,120 @@ function apply(turn: Turn, event: ChatEvent): Turn {
 
 type OnOpen = (c: ClaimEvent, chip: HTMLButtonElement) => void
 
-function Citation({ claim, onOpen }: { claim: ClaimEvent; onOpen: OnOpen }) {
+/**
+ * The documents an answer cites, numbered in the order they first appear (steps, claims,
+ * then refusal passages). With one document a citation is just `p. N` and the name is
+ * shown once; with more, a citation is `n · p. N` and the names are listed as sources.
+ */
+class Sources {
+  readonly documents: CitedDocument[] = []
+  private readonly index = new Map<string, number>()
+
+  constructor(items: { document: CitedDocument }[]) {
+    for (const { document } of items) {
+      if (this.index.has(document.id)) continue
+      this.index.set(document.id, this.documents.length + 1)
+      this.documents.push(document)
+    }
+  }
+
+  get numbered(): boolean {
+    return this.documents.length > 1
+  }
+
+  /** The short form of a citation: `p. 2`, or `1 · p. 2` when there are several sources. */
+  short(document: CitedDocument, page: number): string {
+    return this.numbered ? `${this.index.get(document.id)} · p. ${page}` : `p. ${page}`
+  }
+}
+
+/** A file name on one line, cut with an ellipsis, the whole name in its tooltip. */
+function FileName({ name }: { name: string }) {
+  return (
+    <span className="filename" title={name}>
+      {name}
+    </span>
+  )
+}
+
+/** Sorted page numbers as ranges of consecutive pages: [1, 2, 3, 5] is `pp. 1–3, 5`. */
+export function pageRanges(pages: number[]): string {
+  const sorted = [...new Set(pages)].sort((a, b) => a - b)
+  const ranges: string[] = []
+  for (let i = 0; i < sorted.length; ) {
+    let j = i
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++
+    ranges.push(j === i ? `${sorted[i]}` : `${sorted[i]}–${sorted[j]}`)
+    i = j + 1
+  }
+  return `${sorted.length === 1 ? 'p.' : 'pp.'} ${ranges.join(', ')}`
+}
+
+/**
+ * The line above the claims, built from the claims alone, so it can name nothing no claim
+ * cites: `Found in lease.pdf, pp. 1–3`, or `Found in 2 documents, 5 points`.
+ */
+function LeadLine({ claims }: { claims: ClaimEvent[] }) {
+  const documents = new Sources(claims).documents
+  if (documents.length === 1) {
+    return (
+      <p className="answer-lead">
+        <span>Found in </span>
+        <FileName name={documents[0].filename} />
+        <span>, {pageRanges(claims.map((c) => c.page))}</span>
+      </p>
+    )
+  }
+  return (
+    <p className="answer-lead">
+      Found in {documents.length} documents, {claims.length} points
+    </p>
+  )
+}
+
+function SourceList({ sources }: { sources: Sources }) {
+  if (!sources.numbered) {
+    return (
+      <p className="answer-sources">
+        <span>Source: </span>
+        <FileName name={sources.documents[0].filename} />
+      </p>
+    )
+  }
+  return (
+    <ol aria-label="Sources" className="answer-sources">
+      {sources.documents.map((document, i) => (
+        <li key={document.id}>
+          <span className="source-number">{i + 1}</span> <FileName name={document.filename} />
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function Citation({
+  claim,
+  sources,
+  onOpen,
+}: {
+  claim: ClaimEvent
+  sources: Sources
+  onOpen: OnOpen
+}) {
   return (
     <span role="note" aria-label="Citation" className="citation-chip" title={claim.quote}>
-      <button type="button" onClick={(e) => onOpen(claim, e.currentTarget)}>
-        {claim.document.filename}, p. {claim.page}
+      <button
+        type="button"
+        aria-label={`${claim.document.filename}, p. ${claim.page}`}
+        onClick={(e) => onOpen(claim, e.currentTarget)}
+      >
+        {sources.short(claim.document, claim.page)}
       </button>
     </span>
   )
 }
 
-function Refusal({ passages }: { passages: Passage[] }) {
+function Refusal({ passages, sources }: { passages: Passage[]; sources: Sources }) {
   return (
     <div className="refusal">
       <h3>Not in your documents</h3>
@@ -81,9 +184,7 @@ function Refusal({ passages }: { passages: Passage[] }) {
           <ul aria-label="Closest passages">
             {passages.map((passage, i) => (
               <li key={i}>
-                <span>
-                  {passage.document.filename}, p. {passage.page}
-                </span>
+                <span>{sources.short(passage.document, passage.page)}</span>
                 <blockquote>{passage.text}</blockquote>
               </li>
             ))}
@@ -96,7 +197,7 @@ function Refusal({ passages }: { passages: Passage[] }) {
   )
 }
 
-function Steps({ steps }: { steps: StepEvent[] }) {
+function Steps({ steps, sources }: { steps: StepEvent[]; sources: Sources }) {
   return (
     <ol aria-label="Steps" className="steps">
       {steps.map((step, i) => (
@@ -104,7 +205,7 @@ function Steps({ steps }: { steps: StepEvent[] }) {
           {step.question}{' '}
           <span className="step-pages">
             {step.pages?.length
-              ? step.pages.map((p) => `${p.document.filename}, p. ${p.page}`).join('; ')
+              ? step.pages.map((p) => sources.short(p.document, p.page)).join('; ')
               : 'no pages found'}
           </span>
         </li>
@@ -126,31 +227,44 @@ function Answer({
   // A finished answer with no claim, no refusal and no error would show nothing.
   const empty =
     turn.done !== null && turn.claims.length === 0 && turn.refusal === null && !turn.error
+  const sources = new Sources([
+    ...turn.steps.flatMap((s) => s.pages ?? []),
+    ...turn.claims,
+    ...(turn.refusal ?? []),
+  ])
+  // The lead line goes with claims that stand: never on a refusal or an error.
+  const lead = turn.claims.length > 0 && turn.refusal === null && !turn.error
+  // With one source the lead line already names it once.
+  const listSources = sources.documents.length > 0 && !(lead && !sources.numbered)
   return (
     // Polite: a screen reader reads the claims as they stream in, without cutting in.
     <article aria-label="Answer" aria-busy={turn.streaming} aria-live="polite">
-      {turn.steps.length > 0 && <Steps steps={turn.steps} />}
+      {turn.steps.length > 0 && <Steps steps={turn.steps} sources={sources} />}
+      {lead && <LeadLine claims={turn.claims} />}
       {turn.claims.length > 0 && (
         <ul aria-label="Claims">
           {turn.claims.map((claim, i) => (
             <li key={i}>
-              {claim.text} <Citation claim={claim} onOpen={onOpen} />
+              {claim.text} <Citation claim={claim} sources={sources} onOpen={onOpen} />
             </li>
           ))}
         </ul>
       )}
-      {turn.refusal && <Refusal passages={turn.refusal} />}
-      {turn.streaming && turn.claims.length === 0 && turn.refusal === null && <p>Thinking…</p>}
+      {turn.refusal && <Refusal passages={turn.refusal} sources={sources} />}
+      {turn.streaming && turn.claims.length === 0 && turn.refusal === null && (
+        <ThinkingIndicator />
+      )}
       {turn.error && (
         <>
           <p role="alert">{turn.error}</p>
-          <button type="button" onClick={onRetry} disabled={!onRetry}>
+          <button type="button" className="secondary" onClick={onRetry} disabled={!onRetry}>
             Retry
           </button>
         </>
       )}
       {empty && <p role="alert">The answer came back empty.</p>}
       {turn.stopped && <p role="status">You stopped this answer before it finished.</p>}
+      {listSources && <SourceList sources={sources} />}
       {turn.done && <AnswerMeta done={turn.done} />}
     </article>
   )
@@ -164,12 +278,13 @@ function stillReading(files: string[]): string {
 }
 
 export default function Chat({
-  collections,
+  collection,
   loading = false,
   empty = false,
   ingesting = {},
 }: {
-  collections: string[]
+  /** The active collection, chosen in the documents panel; '' while none is named. */
+  collection: string
   /** The collections are still loading for the first time. */
   loading?: boolean
   /** The collections loaded, and none holds a document yet. */
@@ -177,7 +292,6 @@ export default function Chat({
   /** Filenames still being read, by collection name. */
   ingesting?: Record<string, string[]>
 }) {
-  const [chosen, setChosen] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
   const [mode, setMode] = useState<ChatMode>('fast')
   const [turns, setTurns] = useState<Turn[]>([])
@@ -188,12 +302,6 @@ export default function Chat({
 
   useEffect(() => () => controller.current?.abort(), [])
 
-  const collection =
-    chosen !== null && collections.includes(chosen)
-      ? chosen
-      : collections.includes(DEFAULT_COLLECTION)
-        ? DEFAULT_COLLECTION
-        : (collections[0] ?? '')
   const streaming = turns.some((t) => t.streaming)
 
   function onAsk(e: FormEvent) {
@@ -307,46 +415,46 @@ export default function Chat({
         </Suspense>
       )}
       <form onSubmit={onAsk} className="chat-form">
-        <label>
-          Ask in collection{' '}
-          <select value={collection} onChange={(e) => setChosen(e.target.value)}>
-            {collections.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>{' '}
+        {collection && (
+          <p className="asking-in">
+            <span>Asking in </span>
+            <FileName name={collection} />
+          </p>
+        )}
         <label className="question-field">
-          Ask a question{' '}
+          <span className="visually-hidden">Ask a question</span>
           <textarea
-            rows={1}
+            rows={2}
+            placeholder="Ask a question about the PDFs in this collection"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={onQuestionKey}
           />
-        </label>{' '}
-        <label>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={mode === 'deep'}
-            onChange={(e) => setMode(e.target.checked ? 'deep' : 'fast')}
-          />{' '}
-          Deep mode
-        </label>{' '}
-        <button type="submit" disabled={!question.trim() || !collection || streaming}>
-          Ask
-        </button>
-        {streaming && (
-          <>
-            {' '}
-            <button type="button" onClick={() => controller.current?.abort()}>
-              Stop
+        </label>
+        <div className="chat-actions">
+          <div className="chat-options">
+            <label>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={mode === 'deep'}
+                onChange={(e) => setMode(e.target.checked ? 'deep' : 'fast')}
+              />{' '}
+              Deep mode
+            </label>
+            {mode === 'deep' && <p className="deep-note">{DEEP_NOTE}</p>}
+          </div>
+          <div className="chat-buttons">
+            {streaming && (
+              <button type="button" className="secondary" onClick={() => controller.current?.abort()}>
+                Stop
+              </button>
+            )}
+            <button type="submit" disabled={!question.trim() || !collection || streaming}>
+              Ask
             </button>
-          </>
-        )}
-        {mode === 'deep' && <p className="deep-note">{DEEP_NOTE}</p>}
+          </div>
+        </div>
         {ingesting[collection]?.length ? (
           <p className="ingesting-note">{stillReading(ingesting[collection])}</p>
         ) : null}

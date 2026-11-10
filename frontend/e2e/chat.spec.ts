@@ -59,24 +59,34 @@ test('streams an answer claim by claim, each with its citation chip', async ({
   })
   await page.goto('/')
 
-  await page.getByLabel('Ask in collection').selectOption('contracts')
+  // The one collection picker, in the documents panel, picks where the chat asks.
+  await expect(page.getByRole('combobox')).toHaveCount(1)
+  await page.getByLabel('Collection', { exact: true }).selectOption({ label: 'contracts' })
   await page.getByLabel('Ask a question').fill(question)
   await page.getByRole('button', { name: 'Ask' }).click()
 
   const answer = page.getByRole('article', { name: 'Answer' })
-  const claims = answer.getByRole('listitem')
+  const claims = answer.getByRole('list', { name: 'Claims' }).getByRole('listitem')
   await expect(claims).toHaveCount(1)
   await expect(claims.nth(0)).toContainText('The lease runs for two years.')
-  await expect(claims.nth(0).getByRole('note', { name: 'Citation' })).toHaveText('lease.pdf, p. 3')
+  // One document so far: a short chip, and the name once, in the lead line.
+  await expect(claims.nth(0).getByRole('note', { name: 'Citation' })).toHaveText('p. 3')
+  await expect(answer.locator('.answer-lead')).toHaveText('Found in lease.pdf, p. 3')
   await expect(answer).toHaveAttribute('aria-busy', 'true')
   expect(sent).toEqual({ question, mode: 'fast' })
 
   expect((await next()).ok()).toBe(true)
   await expect(claims).toHaveCount(2)
   await expect(claims.nth(1)).toContainText('It can be extended once.')
-  await expect(claims.nth(1).getByRole('note', { name: 'Citation' })).toHaveText(
-    'addendum.pdf, p. 1',
-  )
+  // Two documents: numbered chips and numbered sources under the answer.
+  await expect(claims.nth(0).getByRole('note', { name: 'Citation' })).toHaveText('1 · p. 3')
+  await expect(claims.nth(1).getByRole('note', { name: 'Citation' })).toHaveText('2 · p. 1')
+  await expect(claims.nth(1).getByRole('button', { name: 'addendum.pdf, p. 1' })).toBeVisible()
+  await expect(answer.getByRole('list', { name: 'Sources' }).getByRole('listitem')).toHaveText([
+    '1 lease.pdf',
+    '2 addendum.pdf',
+  ])
+  await expect(answer.locator('.answer-lead')).toHaveText('Found in 2 documents, 2 points')
   await expect(claims.nth(1).getByRole('note', { name: 'Citation' })).toHaveAttribute(
     'title',
     'one renewal',
@@ -106,7 +116,8 @@ test('a stream that ends without done is shown as cut off, not complete', async 
   await page.getByRole('button', { name: 'Ask' }).click()
 
   const answer = page.getByRole('article', { name: 'Answer' })
-  await expect(answer.getByRole('listitem')).toHaveText(['Half an answer. lease.pdf, p. 2'])
+  await expect(answer.getByRole('listitem')).toHaveText(['Half an answer. p. 2'])
+  await expect(answer).toContainText('Source: lease.pdf')
   await expect(answer.getByRole('alert')).toHaveText(
     'The answer stopped before it finished.',
   )

@@ -272,10 +272,51 @@ def test_document_with_no_readable_page_fails(start, db_engine, embedder):
 
     final = status(db_engine, doc_id)
     assert final["state"] == "failed"
-    assert final["error"] == "no page could be read"
+    # No text layer on any page and OCR off (`env` unsets OCR_URL): it is a scan.
+    assert final["error"] == SCAN_WITH_OCR_OFF
     assert (final["pages_total"], final["pages_read"]) == (2, 0)
     assert count(db_engine, pages, doc_id) == 2
     assert embedder.calls == []
+
+
+SCAN_WITH_OCR_OFF = (
+    "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)"
+)
+
+
+def test_a_scan_with_ocr_off_says_it_is_a_scan_and_ocr_is_off(start, db_engine):
+    client = start()
+    image_only = pymupdf.open()
+    page = image_only.new_page()
+    # A picture of text and no text layer, the way a scanner writes a page.
+    pixmap = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 40, 20), False)
+    pixmap.clear_with(200)
+    page.insert_image(pymupdf.Rect(72, 72, 272, 172), pixmap=pixmap)
+    doc_id = upload(client, image_only.tobytes())["id"]
+    client.app.state.worker.join()
+
+    final = status(db_engine, doc_id)
+    assert final["state"] == "failed"
+    assert final["error"] == SCAN_WITH_OCR_OFF
+
+
+def test_a_scan_with_ocr_unreachable_keeps_the_ocr_error_not_the_scan_text(
+    start, db_engine, monkeypatch
+):
+    # Nothing listens on port 9 (discard) here, so the OCR call fails to connect.
+    monkeypatch.setenv("OCR_URL", "http://127.0.0.1:9")
+    client = start()
+    doc_id = upload(client, make_pdf(["", ""]))["id"]
+    client.app.state.worker.join()
+
+    final = status(db_engine, doc_id)
+    assert final["state"] == "failed"
+    assert final["error"] == "no page could be read"
+    with db_engine.connect() as conn:
+        ocr_errors = conn.execute(
+            select(pages.c.ocr_error).where(pages.c.document_id == doc_id)
+        ).scalars()
+        assert all(e and e.startswith("OCR service unreachable") for e in ocr_errors)
 
 
 def add_document(engine, document_id: str, state: str) -> None:

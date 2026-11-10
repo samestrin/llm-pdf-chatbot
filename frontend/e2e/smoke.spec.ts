@@ -1,6 +1,6 @@
 import { expect, json, pdf, test } from './fixtures'
 
-test('loads the app and shows the backend health from same-origin /api', async ({
+test('loads the app and checks the backend health at same-origin /api', async ({
   page,
   api,
   baseURL,
@@ -10,16 +10,22 @@ test('loads the app and shows the backend health from same-origin /api', async (
 
   await expect(page.getByRole('heading', { name: 'LLM PDF Chatbot' })).toBeVisible()
   expect((await health).url()).toBe(`${baseURL}/api/health`)
-  await expect(page.getByRole('status')).toHaveText('Backend: ok')
+  // A healthy backend is not mentioned.
+  await expect(page.getByRole('heading', { name: 'No documents yet' })).toBeVisible()
+  await expect(page.getByRole('banner')).not.toContainText('Backend')
   // React StrictMode runs the effect twice in dev, so the call can repeat.
   expect(new Set(api.calls)).toEqual(new Set(['GET /api/health', 'GET /api/collections']))
 })
 
-test('shows the backend as unreachable when /api/health fails', async ({ page, api }) => {
+test('shows the backend as down when /api/health fails, with a Retry', async ({ page, api }) => {
   api.on('GET', '/api/health', json({ detail: 'database unavailable' }, 503))
   await page.goto('/')
 
-  await expect(page.getByRole('status')).toHaveText('Backend: unreachable')
+  const banner = page.getByRole('banner')
+  await expect(banner.getByRole('status')).toHaveText('Backend is down')
+  api.on('GET', '/api/health', json({ status: 'ok' }))
+  await banner.getByRole('button', { name: 'Retry' }).click()
+  await expect(banner).not.toContainText('Backend')
 })
 
 test('serves the committed fixture PDF through a route fixture', async ({ page, api }) => {

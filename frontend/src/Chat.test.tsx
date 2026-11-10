@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import Chat from './Chat'
+import Chat, { pageRanges } from './Chat'
 
 function ndjson(...events: object[]) {
   return new Response(events.map((e) => `${JSON.stringify(e)}\n`).join(''))
@@ -16,20 +16,21 @@ function ask(question: string) {
 describe('Chat', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('asks the default collection unless another is chosen', async () => {
+  it('asks in the active collection it is given, and has no collection control of its own', async () => {
     const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
       Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
     )
     vi.stubGlobal('fetch', fetch)
-    render(<Chat collections={['other', 'default']} />)
+    const { rerender } = render(<Chat collection="default" />)
 
-    expect(screen.getByLabelText('Ask in collection')).toHaveValue('default')
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.getByText('default', { selector: '.asking-in .filename' })).toBeInTheDocument()
     ask('one')
     expect(await screen.findByRole('article', { name: 'Answer' })).toHaveAttribute(
       'aria-busy',
       'false',
     )
-    fireEvent.change(screen.getByLabelText('Ask in collection'), { target: { value: 'other' } })
+    rerender(<Chat collection="other" />)
     ask('two')
 
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
@@ -45,7 +46,7 @@ describe('Chat', () => {
         ndjson({ type: 'refusal', passages: [] }, { type: 'error', message: 'model failed' }),
       ),
     )
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('anything')
 
     const answer = await screen.findByRole('article', { name: 'Answer' })
@@ -53,23 +54,24 @@ describe('Chat', () => {
     expect(answer).toHaveTextContent('The documents do not answer this.')
   })
 
-  it('shows an answer that finishes empty as an error, with its cost', async () => {
+  it('shows an answer that finishes empty as an error, with no unknown cost', async () => {
     vi.stubGlobal('fetch', () =>
       Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
     )
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('anything')
 
     const answer = await screen.findByRole('article', { name: 'Answer' })
     expect(await within(answer).findByRole('alert')).toHaveTextContent(
       'The answer came back empty.',
     )
-    expect(within(answer).getByLabelText('Answer details')).toHaveTextContent('cost unknown')
+    expect(within(answer).getByLabelText('Answer details')).toHaveTextContent('fast · m')
+    expect(answer).not.toHaveTextContent('cost unknown')
   })
 
   it('shows a request that fails before it streams as a failed answer', async () => {
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')))
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('anything')
 
     const answer = await screen.findByRole('article', { name: 'Answer' })
@@ -88,7 +90,7 @@ describe('Chat', () => {
       })
       return Promise.resolve(new Response(body))
     })
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('anything')
 
     const answer = await screen.findByRole('article', { name: 'Answer' })
@@ -120,7 +122,7 @@ describe('Chat', () => {
       ),
     )
     vi.stubGlobal('fetch', fetch)
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
 
     const deep = screen.getByRole('switch', { name: 'Deep mode' })
     expect(screen.queryByText(/uses the reasoning model/)).toBeNull()
@@ -136,16 +138,22 @@ describe('Chat', () => {
       'listitem',
     )
     expect(steps.map((s) => s.textContent)).toEqual([
-      'How long is the lease? lease.pdf, p. 3; addendum.pdf, p. 1',
+      'How long is the lease? 1 · p. 3; 2 · p. 1',
       'Is there parking? no pages found',
     ])
     expect(fetch.mock.calls[0][1]?.body).toBe(
       JSON.stringify({ question: 'compare', mode: 'deep' }),
     )
+    // Two documents: the steps use numbered short citations and the names are listed once.
+    expect(
+      within(within(answer).getByRole('list', { name: 'Sources' })).getAllByRole('listitem').map(
+        (li) => li.textContent,
+      ),
+    ).toEqual(['1 lease.pdf', '2 addendum.pdf'])
   })
 
   it('cannot ask with no collection, and says what to do first', () => {
-    render(<Chat collections={[]} empty />)
+    render(<Chat collection="" empty />)
     fireEvent.change(screen.getByLabelText('Ask a question'), { target: { value: 'q' } })
     expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled()
     expect(screen.getByRole('heading', { name: 'Nothing to ask about yet' })).toBeInTheDocument()
@@ -153,7 +161,7 @@ describe('Chat', () => {
   })
 
   it('does not claim there are no documents when it is not known', () => {
-    render(<Chat collections={[]} />)
+    render(<Chat collection="" />)
     expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled()
     expect(screen.queryByRole('heading', { name: 'Nothing to ask about yet' })).toBeNull()
   })
@@ -162,7 +170,7 @@ describe('Chat', () => {
     vi.stubGlobal('fetch', () =>
       Promise.resolve(ndjson({ type: 'refusal', passages: [] }, { type: 'done', mode: 'fast', model: 'm', cost: null })),
     )
-    render(<Chat collections={['default']} empty />)
+    render(<Chat collection="default" empty />)
     expect(screen.getByRole('heading', { name: 'Nothing to ask about yet' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled()
 
@@ -172,7 +180,7 @@ describe('Chat', () => {
   })
 
   it('shows that documents are loading instead of the first-run state', () => {
-    render(<Chat collections={[]} loading />)
+    render(<Chat collection="" loading />)
     const chat = screen.getByRole('region', { name: 'Chat' })
     expect(within(chat).getByText('Loading your documents…')).toBeInTheDocument()
     expect(chat).toHaveAttribute('aria-busy', 'true')
@@ -197,7 +205,7 @@ describe('Chat', () => {
         ),
       )
     vi.stubGlobal('fetch', fetch)
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('How long?')
 
     const answer = await screen.findByRole('article', { name: 'Answer' })
@@ -222,13 +230,13 @@ describe('Chat', () => {
       .fn<(url: string, init?: RequestInit) => Promise<Response>>()
       .mockRejectedValue(new TypeError('Failed to fetch'))
     vi.stubGlobal('fetch', fetch)
-    render(<Chat collections={['default', 'other']} />)
+    const { rerender } = render(<Chat collection="default" />)
     fireEvent.click(screen.getByRole('switch', { name: 'Deep mode' }))
     ask('How long?')
     const answer = await screen.findByRole('article', { name: 'Answer' })
     await within(answer).findByRole('alert')
 
-    fireEvent.change(screen.getByLabelText('Ask in collection'), { target: { value: 'other' } })
+    rerender(<Chat collection="other" />)
     fireEvent.click(screen.getByRole('switch', { name: 'Deep mode' }))
     fireEvent.click(within(answer).getByRole('button', { name: 'Retry' }))
 
@@ -241,7 +249,7 @@ describe('Chat', () => {
     vi.stubGlobal('fetch', () =>
       Promise.resolve(ndjson({ type: 'refusal', passages: [] }, { type: 'done', mode: 'fast', model: 'm', cost: null })),
     )
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('anything')
     const answer = await screen.findByRole('article', { name: 'Answer' })
     await within(answer).findByLabelText('Answer details')
@@ -249,18 +257,14 @@ describe('Chat', () => {
   })
 
   it('says which documents of the chosen collection are still being read', () => {
-    render(
-      <Chat
-        collections={['default', 'other']}
-        ingesting={{ default: ['lease.pdf', 'addendum.pdf'], other: ['x.pdf'] }}
-      />,
-    )
+    const ingesting = { default: ['lease.pdf', 'addendum.pdf'], other: ['x.pdf'] }
+    const { rerender } = render(<Chat collection="default" ingesting={ingesting} />)
     expect(
       screen.getByText(
         'Still reading lease.pdf, addendum.pdf. Answers leave them out until they are ready.',
       ),
     ).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Ask in collection'), { target: { value: 'other' } })
+    rerender(<Chat collection="other" ingesting={ingesting} />)
     expect(
       screen.getByText('Still reading x.pdf. Answers leave it out until it is ready.'),
     ).toBeInTheDocument()
@@ -270,7 +274,7 @@ describe('Chat', () => {
     vi.stubGlobal('fetch', () =>
       Promise.resolve(ndjson({ type: 'refusal', passages: [] }, { type: 'done', mode: 'fast', model: 'm', cost: null })),
     )
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     ask('anything')
     const answer = await screen.findByRole('article', { name: 'Answer' })
     expect(answer).toHaveAttribute('aria-live', 'polite')
@@ -281,7 +285,7 @@ describe('Chat', () => {
       Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
     )
     vi.stubGlobal('fetch', fetch)
-    render(<Chat collections={['default']} />)
+    render(<Chat collection="default" />)
     const input = screen.getByLabelText('Ask a question')
     expect(input.tagName).toBe('TEXTAREA')
     fireEvent.change(input, { target: { value: 'first line' } })
@@ -299,5 +303,126 @@ describe('Chat', () => {
       JSON.stringify({ question: 'first line\nsecond line', mode: 'fast' }),
     )
     expect(input).toHaveValue('')
+  })
+
+  describe('citations and the lead line', () => {
+    const LONG = `${'annual-financial-statement-and-auditor-report-'.repeat(3).slice(0, 96)}.pdf`
+    const claim = (text: string, id: string, filename: string, page: number) => ({
+      type: 'claim',
+      text,
+      document: { id, filename },
+      page,
+      chunk_id: `${id}-${page}`,
+      quote: `quote for ${text}`,
+    })
+    const done = { type: 'done', mode: 'fast', model: 'm', cost: null }
+    const answerWith = async (...events: object[]) => {
+      vi.stubGlobal('fetch', () => Promise.resolve(ndjson(...events)))
+      render(<Chat collection="default" />)
+      ask('q')
+      const answer = await screen.findByRole('article', { name: 'Answer' })
+      await vi.waitFor(() => expect(answer).toHaveAttribute('aria-busy', 'false'))
+      return answer
+    }
+
+    it('names one document once, with short page chips that keep the full name for screen readers', async () => {
+      expect(LONG).toHaveLength(100)
+      const answer = await answerWith(
+        claim('One.', 'd1', LONG, 1),
+        claim('Two.', 'd1', LONG, 2),
+        claim('Three.', 'd1', LONG, 3),
+        done,
+      )
+
+      expect(answer.textContent?.split(LONG)).toHaveLength(2)
+      expect(within(answer).getByText(LONG)).toHaveAttribute('title', LONG)
+      const chips = within(answer).getAllByRole('note', { name: 'Citation' })
+      expect(chips.map((c) => c.textContent)).toEqual(['p. 1', 'p. 2', 'p. 3'])
+      expect(chips[1]).toHaveAttribute('title', 'quote for Two.')
+      expect(within(answer).getByRole('button', { name: `${LONG}, p. 2` })).toHaveTextContent(
+        'p. 2',
+      )
+      expect(within(answer).getByText(/^Found in/).closest('p')).toHaveTextContent(
+        `Found in ${LONG}, pp. 1–3`,
+      )
+      expect(within(answer).queryByRole('list', { name: 'Sources' })).toBeNull()
+
+      fireEvent.click(within(answer).getByRole('button', { name: `${LONG}, p. 2` }))
+      expect(
+        await screen.findByText(/Opening the PDF viewer|Loading page|Page 2/),
+      ).toBeInTheDocument()
+    })
+
+    it('numbers the sources of a two-document answer', async () => {
+      const answer = await answerWith(
+        claim('Two years.', 'd1', 'lease.pdf', 2),
+        claim('One more.', 'd2', 'addendum.pdf', 1),
+        claim('Rent is due monthly.', 'd1', 'lease.pdf', 4),
+        done,
+      )
+
+      expect(
+        within(answer)
+          .getAllByRole('note', { name: 'Citation' })
+          .map((c) => c.textContent),
+      ).toEqual(['1 · p. 2', '2 · p. 1', '1 · p. 4'])
+      expect(within(answer).getByRole('button', { name: 'addendum.pdf, p. 1' })).toBeInTheDocument()
+      expect(
+        within(within(answer).getByRole('list', { name: 'Sources' }))
+          .getAllByRole('listitem')
+          .map((li) => li.textContent),
+      ).toEqual(['1 lease.pdf', '2 addendum.pdf'])
+      expect(within(answer).getByText(/^Found in/)).toHaveTextContent(
+        'Found in 2 documents, 3 points',
+      )
+    })
+
+    it('never names a page no claim cites', async () => {
+      const answer = await answerWith(
+        claim('A.', 'd1', 'lease.pdf', 3),
+        claim('B.', 'd1', 'lease.pdf', 1),
+        done,
+      )
+      expect(within(answer).getByText(/^Found in/).closest('p')).toHaveTextContent(
+        'Found in lease.pdf, pp. 1, 3',
+      )
+    })
+
+    it('has no lead line on a refusal, an error or an empty answer', async () => {
+      const refused = await answerWith(
+        {
+          type: 'refusal',
+          passages: [{ document: { id: 'd1', filename: 'lease.pdf' }, page: 4, chunk_id: 'c', text: 'x' }],
+        },
+        done,
+      )
+      expect(within(refused).queryByText(/^Found in/)).toBeNull()
+      expect(within(refused).getByRole('list', { name: 'Closest passages' })).toHaveTextContent(
+        'p. 4',
+      )
+      expect(within(refused).getByText('lease.pdf')).toHaveAttribute('title', 'lease.pdf')
+    })
+
+    it('has no lead line when the answer fails after a claim', async () => {
+      const failed = await answerWith(claim('Half.', 'd1', 'lease.pdf', 2), {
+        type: 'error',
+        message: 'x',
+      })
+      expect(within(failed).queryByText(/^Found in/)).toBeNull()
+      // The document is still named once.
+      expect(within(failed).getByText('lease.pdf')).toBeInTheDocument()
+    })
+
+    it('has no lead line on an empty answer', async () => {
+      const empty = await answerWith(done)
+      expect(within(empty).queryByText(/^Found in/)).toBeNull()
+    })
+
+    it('writes page ranges from the cited pages only', () => {
+      expect(pageRanges([2])).toBe('p. 2')
+      expect(pageRanges([3, 1, 2, 2])).toBe('pp. 1–3')
+      expect(pageRanges([1, 3])).toBe('pp. 1, 3')
+      expect(pageRanges([5, 1, 2, 7, 8])).toBe('pp. 1–2, 5, 7–8')
+    })
   })
 })

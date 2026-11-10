@@ -40,6 +40,14 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 
 - When the model endpoint cannot be reached, a chat answer and a failed document upload now say so and name `LLM_BASE_URL` as the setting to check.
 - A refreshed page look built on one set of design tokens (colour, type, spacing, radius, shadow, focus ring) in `theme.css`; light and dark text pass WCAG AA contrast. On a desktop the documents panel is a sidebar beside the chat; on a phone it stacks above the chat, the question box stays at the bottom of the screen, and the PDF viewer fills the screen.
+- Deleting a collection's last document removes the collection, and `DELETE /collections/{name}` removes an empty one (409 when it still has documents); the page offers "Remove empty collection" for one.
+- One collection picker in the documents panel drives uploads, the sample button, dropped files and the chat, with "New collection…" for a new name; the chat's own collection list is gone.
+- Drop a PDF on the documents panel to upload it; a file chosen with the file button uploads at once, so there is no separate Upload button.
+- Long file names stay on one line with an ellipsis and the whole name in a tooltip; Delete is a small button that asks first, and each document shows its page count once.
+- A scanned PDF with no text layer, read with OCR off, fails with "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)" instead of "no page could be read".
+- Citation chips show the page only (`p. 3`); the document is named once per answer, or listed as numbered sources (`2 · p. 1`) when an answer cites several. A line built from the claims ("Found in lease.pdf, pp. 1–3") opens each answer that has claims.
+- The header mentions the backend only when it is down, with a Retry button, and an answer shows its cost only when it is known.
+- Buttons have a solid primary colour in both themes and a distinct grey disabled style, instead of a faded one.
 
 [Unreleased]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/samestrin/llm-pdf-chatbot/releases/tag/v1.0.0

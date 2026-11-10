@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import Chat from './Chat'
 import ThemeToggle from './ThemeToggle'
 import DocumentsPanel from './DocumentsPanel'
+import { useActiveCollection } from './activeCollection'
 import { getHealth, isIngesting, type Collection, type Health } from './api'
+import LogoMark from './LogoMark'
 
 export default function App() {
   const [health, setHealth] = useState<Health | 'checking'>('checking')
@@ -10,12 +12,24 @@ export default function App() {
   const [collections, setCollections] = useState<Collection[] | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const onLoadError = useCallback((message: string | null) => setLoadFailed(message !== null), [])
+  const { active, setActive, onLoaded } = useActiveCollection()
+  const onCollections = useCallback(
+    (loaded: Collection[]) => {
+      setCollections(loaded)
+      onLoaded(loaded.map((c) => c.name))
+    },
+    [onLoaded],
+  )
+
+  const checkHealth = useCallback((signal?: AbortSignal) => {
+    getHealth(signal).then(setHealth, () => {})
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
-    getHealth(controller.signal).then(setHealth, () => {})
+    checkHealth(controller.signal)
     return () => controller.abort()
-  }, [])
+  }, [checkHealth])
 
   const ingesting = Object.fromEntries(
     (collections ?? []).map((c) => [
@@ -23,6 +37,7 @@ export default function App() {
       c.documents.filter(isIngesting).map((d) => d.filename),
     ]),
   )
+  const down = health === 'unreachable'
 
   return (
     <div className="app">
@@ -30,15 +45,38 @@ export default function App() {
         Skip to chat
       </a>
       <header className="app-bar">
-        <h1>LLM PDF Chatbot</h1>
-        <p role="status">Backend: {health}</p>
+        <h1 className="app-title">
+          <LogoMark />
+          LLM PDF Chatbot
+        </h1>
+        {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
+        <div className="backend-status">
+          <p role="status">{down ? 'Backend is down' : ''}</p>
+          {down && (
+            <button
+              type="button"
+              className="secondary small"
+              onClick={() => {
+                setHealth('checking')
+                checkHealth()
+              }}
+            >
+              Retry
+            </button>
+          )}
+        </div>
         <ThemeToggle />
       </header>
       <div className="app-layout">
-        <DocumentsPanel onCollections={setCollections} onLoadError={onLoadError} />
+        <DocumentsPanel
+          active={active}
+          onActiveChange={setActive}
+          onCollections={onCollections}
+          onLoadError={onLoadError}
+        />
         <main id="main" tabIndex={-1}>
           <Chat
-            collections={(collections ?? []).map((c) => c.name)}
+            collection={active.name.trim()}
             loading={collections === null && !loadFailed}
             empty={collections !== null && collections.every((c) => c.documents.length === 0)}
             ingesting={ingesting}

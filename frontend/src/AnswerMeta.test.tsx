@@ -18,10 +18,20 @@ describe('formatCost', () => {
 })
 
 describe('AnswerMeta', () => {
-  it('shows mode, model and cost as text', () => {
+  it('shows mode and model as text, and no cost when it is unknown', () => {
     render(<AnswerMeta done={{ type: 'done', mode: 'fast', model: '<b>m</b>', cost: null }} />)
     const meta = screen.getByLabelText('Answer details')
-    expect(meta).toHaveTextContent('fast · <b>m</b> · cost unknown')
+    expect(meta.textContent).toBe('fast · <b>m</b>')
+    expect(meta).not.toHaveTextContent('cost unknown')
     expect(meta.querySelector('b')).toBeNull()
+  })
+
+  it('shows a known cost, a real zero included', () => {
+    const { rerender } = render(
+      <AnswerMeta done={{ type: 'done', mode: 'fast', model: 'm', cost: 0.0021 }} />,
+    )
+    expect(screen.getByLabelText('Answer details').textContent).toBe('fast · m · $0.0021')
+    rerender(<AnswerMeta done={{ type: 'done', mode: 'fast', model: 'm', cost: 0 }} />)
+    expect(screen.getByLabelText('Answer details').textContent).toBe('fast · m · $0')
   })
 })

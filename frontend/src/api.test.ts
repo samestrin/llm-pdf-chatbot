@@ -1,4 +1,11 @@
-import { deleteDocument, listCollections, streamChat, uploadDocument, type ChatEvent } from './api'
+import {
+  deleteCollection,
+  deleteDocument,
+  listCollections,
+  streamChat,
+  uploadDocument,
+  type ChatEvent,
+} from './api'
 
 class FakeXhr {
   static last: FakeXhr
@@ -179,5 +186,23 @@ describe('streamChat', () => {
   it('throws on a line that is not an event', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(new Response(streamOf('not json\n'))))
     await expect(collect(streamChat('c', 'q'))).rejects.toThrow('malformed answer stream')
+  })
+})
+
+describe('deleteCollection', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('deletes the named collection, with the name encoded', async () => {
+    const fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })))
+    vi.stubGlobal('fetch', fetch)
+    await deleteCollection('a/b c')
+    expect(fetch).toHaveBeenCalledWith('/api/collections/a%2Fb%20c', { method: 'DELETE' })
+  })
+
+  it('throws the detail when the collection is not empty', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(Response.json({ detail: 'collection is not empty' }, { status: 409 })),
+    )
+    await expect(deleteCollection('papers')).rejects.toThrow('collection is not empty')
   })
 })

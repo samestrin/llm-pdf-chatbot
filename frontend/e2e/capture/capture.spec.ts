@@ -58,11 +58,10 @@ test('captures the README screenshots and GIF', async ({ page, api }) => {
   const snap = async () => frames.push(await page.screenshot())
 
   await page.goto('/')
-  await page.getByText('Backend: ok').waitFor()
+  await page.getByRole('heading', { name: 'No documents yet' }).waitFor()
   await snap()
 
   await page.locator('input[type=file]').setInputFiles(SAMPLE_PDF_PATH)
-  await page.getByRole('button', { name: 'Upload' }).click()
   await page.getByText('Ready: 4 pages').waitFor()
   await page.screenshot({ path: OUT + README_IMAGES.upload })
   await snap()

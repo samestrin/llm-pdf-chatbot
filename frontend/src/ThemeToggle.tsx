@@ -12,8 +12,9 @@ export default function ThemeToggle() {
   }
 
   return (
-    <button type="button" className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggle}>
-      Dark theme
+    // The label names what a click does, so the way back is always visible.
+    <button type="button" className="theme-toggle" onClick={toggle}>
+      {theme === 'dark' ? 'Light theme' : 'Dark theme'}
     </button>
   )
 }

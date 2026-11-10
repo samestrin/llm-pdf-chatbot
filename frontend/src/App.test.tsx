@@ -37,23 +37,37 @@ describe('App', () => {
     expect(within(main).getByRole('region', { name: 'Chat' })).toBeInTheDocument()
   })
 
-  it('asks the backend for its health at same-origin /api/health', async () => {
+  it('asks the backend for its health at same-origin /api/health, and says nothing when it is up', async () => {
     const fetch = stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
     render(<App />)
-    expect(await screen.findByText('Backend: ok')).toBeInTheDocument()
-    expect(fetch).toHaveBeenCalledWith('/api/health', expect.anything())
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith('/api/health', expect.anything()),
+    )
+    await screen.findByRole('heading', { name: 'No documents yet' })
+    expect(screen.queryByText(/Backend/)).toBeNull()
   })
 
-  it('shows the backend as unreachable on an error status', async () => {
+  it('shows the backend as down on an error status', async () => {
     stubFetch(() => Promise.resolve(Response.json({ detail: 'down' }, { status: 503 })))
     render(<App />)
-    expect(await screen.findByText('Backend: unreachable')).toBeInTheDocument()
+    expect(await screen.findByText('Backend is down')).toBeInTheDocument()
   })
 
-  it('shows the backend as unreachable when the request fails', async () => {
-    stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
+  it('shows the backend as down when the request fails, and checks again on Retry', async () => {
+    let up = false
+    stubFetch(() =>
+      up
+        ? Promise.resolve(Response.json({ status: 'ok' }))
+        : Promise.reject(new TypeError('Failed to fetch')),
+    )
     render(<App />)
-    expect(await screen.findByText('Backend: unreachable')).toBeInTheDocument()
+    const banner = screen.getByRole('banner')
+    expect(await within(banner).findByText('Backend is down')).toBeInTheDocument()
+
+    up = true
+    fireEvent.click(within(banner).getByRole('button', { name: 'Retry' }))
+    await vi.waitFor(() => expect(within(banner).queryByText('Backend is down')).toBeNull())
+    expect(within(banner).queryByRole('button', { name: 'Retry' })).toBeNull()
   })
 
   it('tells the chat while documents load, and when none exist', async () => {
@@ -139,5 +153,101 @@ describe('App', () => {
     ).toBeInTheDocument()
     expect(chat).toHaveAttribute('aria-busy', 'false')
     expect(within(chat).queryByText('Loading your documents…')).toBeNull()
+  })
+
+  describe('the active collection', () => {
+    const doc = (id: string, filename: string) => ({
+      id,
+      filename,
+      pages: 1,
+      size_bytes: 1,
+      status: { state: 'ready', error: null, pages_total: 1, pages_read: 1, pages_failed: 0, failures: [] },
+    })
+    const ndjson = (...events: object[]) =>
+      new Response(events.map((e) => `${JSON.stringify(e)}\n`).join(''))
+
+    it('is one control that drives both the upload and the question', async () => {
+      let collections = [{ id: 1, name: 'default', documents: [doc('a', 'a.pdf')] }]
+      const posts: string[] = []
+      class FakeXhr {
+        upload = {}
+        status = 201
+        responseText = '{}'
+        onload: (() => void) | null = null
+        open(_m: string, url: string) {
+          posts.push(url)
+        }
+        send() {
+          collections = [...collections, { id: 2, name: 'contracts', documents: [doc('b', 'lease.pdf')] }]
+          this.onload?.()
+        }
+      }
+      vi.stubGlobal('XMLHttpRequest', FakeXhr)
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          if (url === '/api/collections') return Promise.resolve(Response.json(collections))
+          if (url.endsWith('/chat')) {
+            posts.push(url)
+            return Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null }))
+          }
+          return Promise.resolve(Response.json({ status: 'ok' }))
+        }),
+      )
+      render(<App />)
+      await screen.findByText('a.pdf')
+
+      // One collection control on the whole page, and no second one in the chat.
+      expect(screen.getAllByRole('combobox')).toHaveLength(1)
+      expect(screen.queryByLabelText('Ask in collection')).toBeNull()
+
+      fireEvent.change(screen.getByLabelText('Collection'), { target: { value: 'new' } })
+      fireEvent.change(screen.getByLabelText('New collection name'), {
+        target: { value: 'contracts' },
+      })
+      const file = new File(['%PDF'], 'lease.pdf', { type: 'application/pdf' })
+      fireEvent.change(screen.getByLabelText('PDF'), { target: { files: [file] } })
+      await screen.findByText('lease.pdf')
+      // The new name is now an existing collection, and still the active one.
+      await vi.waitFor(() => expect(screen.getByLabelText('Collection')).toHaveDisplayValue('contracts'))
+      expect(screen.queryByLabelText('New collection name')).toBeNull()
+
+      fireEvent.change(screen.getByLabelText('Ask a question'), { target: { value: 'q' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
+      await vi.waitFor(() =>
+        expect(posts).toEqual([
+          '/api/collections/contracts/documents',
+          '/api/collections/contracts/chat',
+        ]),
+      )
+    })
+
+    it('falls back to the first collection when the active one is removed', async () => {
+      let collections = [
+        { id: 1, name: 'alpha', documents: [doc('a', 'a.pdf')] },
+        { id: 2, name: 'smoke', documents: [] as ReturnType<typeof doc>[] },
+      ]
+      vi.stubGlobal('confirm', () => true)
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, init?: RequestInit) => {
+          if (url === '/api/collections/smoke' && init?.method === 'DELETE') {
+            collections = collections.filter((c) => c.name !== 'smoke')
+            return Promise.resolve(new Response(null, { status: 204 }))
+          }
+          if (url === '/api/collections') return Promise.resolve(Response.json(collections))
+          return Promise.resolve(Response.json({ status: 'ok' }))
+        }),
+      )
+      render(<App />)
+      await screen.findByText('a.pdf')
+      fireEvent.change(screen.getByLabelText('Collection'), { target: { value: 'name:smoke' } })
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Remove empty collection' }))
+
+      await vi.waitFor(() => expect(screen.getByLabelText('Collection')).toHaveDisplayValue('alpha'))
+      expect(screen.queryByRole('option', { name: 'smoke' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Remove empty collection' })).toBeNull()
+    })
   })
 })

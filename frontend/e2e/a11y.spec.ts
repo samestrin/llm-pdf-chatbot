@@ -176,14 +176,12 @@ test('keyboard only: upload, ask, open a citation and close it', async ({ page, 
   await expect(skip).toBeFocused()
   await expect(skip).toBeInViewport()
 
-  // Upload: the file input opens its chooser from the keyboard.
+  // Upload: the file input opens its chooser from the keyboard, and the chosen file uploads.
   const file = page.getByLabel('PDF', { exact: true })
   await tabTo(page, file)
   const chooser = page.waitForEvent('filechooser')
   await page.keyboard.press('Space')
   await (await chooser).setFiles(SAMPLE_PDF_PATH)
-  await tabTo(page, page.getByRole('button', { name: 'Upload' }))
-  await page.keyboard.press('Enter')
   await expect(page.getByText('Ready: 2 pages')).toBeVisible()
 
   // Ask: Shift+Enter is a new line, Enter asks.

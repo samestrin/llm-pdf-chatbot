@@ -76,7 +76,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.setViewportSize({ width, height: HEIGHT })
       await page.emulateMedia({ colorScheme: scheme })
       await page.goto('/')
-      await expect(page.getByRole('status').first()).toHaveText('Backend: ok')
+      await expect(page.getByRole('banner')).not.toContainText('Backend')
       await expect(page.getByRole('listitem', { name: LONG_NAME })).toBeVisible()
       await ask(page, 'How did revenue do in the third quarter compared with the rest of the year?')
 

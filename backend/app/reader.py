@@ -21,6 +21,7 @@ import pymupdf
 
 DEFAULT_OCR_TIMEOUT_SECONDS = 120.0
 PYMUPDF = "pymupdf"
+NO_TEXT_LAYER = "page has no text layer"
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def _read_text_layer(pdf: pymupdf.Document, number: int, ocr_error: str | None) 
     except Exception as exc:  # noqa: BLE001 -- PyMuPDF raises many types; record any as the reason.
         return PageRead(number, None, None, ocr_error, f"PyMuPDF could not read the page: {exc}")
     if not text.strip():
-        return PageRead(number, None, None, ocr_error, "page has no text layer")
+        return PageRead(number, None, None, ocr_error, NO_TEXT_LAYER)
     return PageRead(number, text, PYMUPDF, ocr_error)
 
 

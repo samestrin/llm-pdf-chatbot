@@ -36,10 +36,14 @@ from app.db import (
 from app.documents import Limits, stored_path
 from app.llm import LLMClient, LLMConfig, LLMConnectionError
 from app.pages import store_pages
-from app.reader import read_pdf
+from app.reader import NO_TEXT_LAYER, PageRead, read_pdf
 
 DEFAULT_EMBED_BATCH_SIZE = 64
 INTERRUPTED = "ingestion was interrupted: the server stopped while this document was processing"
+NO_PAGE_READ = "no page could be read"
+SCAN_WITH_OCR_OFF = (
+    "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)"
+)
 
 log = logging.getLogger(__name__)
 
@@ -196,7 +200,7 @@ class IngestWorker:
                 chunks_embedded=0,
             )
         if pages_read == 0:
-            raise RuntimeError("no page could be read")
+            raise RuntimeError(_no_page_read_reason(read))
 
         with self._embedder() as embedder:
             for start in range(0, len(rows), self.batch_size):
@@ -231,6 +235,14 @@ class IngestWorker:
     def _exists(self, document_id: str) -> bool:
         with self.engine.connect() as conn:
             return conn.execute(select(exists().where(documents.c.id == document_id))).scalar()
+
+
+def _no_page_read_reason(read: list[PageRead]) -> str:
+    """Why a document with no readable page failed. With OCR off (no page carries an OCR
+    error) and no text layer on any page, it is a scan that only OCR could read."""
+    if all(page.error == NO_TEXT_LAYER and page.ocr_error is None for page in read):
+        return SCAN_WITH_OCR_OFF
+    return NO_PAGE_READ
 
 
 def _to_tsvector(engine: Engine, column: ColumnElement) -> ColumnElement:

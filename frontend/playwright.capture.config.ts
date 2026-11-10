@@ -8,5 +8,5 @@ export default defineConfig({
   testDir: 'e2e/capture',
   testIgnore: [],
   retries: 0,
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 960, height: 640 } } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } }],
 })
