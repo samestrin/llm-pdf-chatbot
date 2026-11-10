@@ -225,7 +225,7 @@ The browser tests start their own Vite dev server and never call a real backend:
 
 ## Releases
 
-Changes are listed in [CHANGELOG.md](CHANGELOG.md). Pushing a `v*` tag (for example `v1.0.0`) runs `.github/workflows/release.yml`: it builds the backend and frontend images, checks that every check run on the tagged commit finished green (`scripts/check_runs_green.py`), and only then pushes both to `ghcr.io/samestrin/llm-pdf-chatbot-backend` and `ghcr.io/samestrin/llm-pdf-chatbot-frontend`, tagged with the version and `latest`. A pull request, or a manual run with `publish` left off, only builds the two images.
+Changes are listed in [CHANGELOG.md](CHANGELOG.md). Pushing a `v*` tag (for example `v1.0.0`) runs `.github/workflows/release.yml`: it builds the backend and frontend images, checks that every check run on the tagged commit finished green (`scripts/check_runs_green.py`), and then creates a GitHub release for the tag with the version's CHANGELOG.md section as its notes (`scripts/changelog_section.py`). The images are pushed to `ghcr.io/samestrin/llm-pdf-chatbot-backend` and `ghcr.io/samestrin/llm-pdf-chatbot-frontend` (tagged with the version and `latest`) only when the repository variable `vars.PUBLISH_IMAGES` is `true`; it is unset by default, so a tag alone does not publish images. A pull request, or a manual run with `publish` left off, only builds the two images.
 
 ## Layout
 

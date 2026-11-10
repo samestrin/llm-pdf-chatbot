@@ -34,7 +34,7 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 - Keyboard and screen-reader support: a "Skip to chat" link; header, documents sidebar and main landmarks; streamed answers read out as they arrive; Enter asks and Shift+Enter starts a new line; the PDF viewer keeps focus inside it, closes on Escape and returns focus to the citation chip; and nothing animates when reduced motion is asked for.
 - A "Try it" section in the README, and refreshed screenshots including a dark-mode and a phone-width image.
 - An evaluation: 40 questions (10 unanswerable) over 5 freely licensed PDFs, scored for accuracy, citation precision, refusal accuracy and cost.
-- A release workflow: a `v*` tag builds the backend and frontend images and, once the tagged commit's checks are green, publishes both to the GitHub Container Registry.
+- A release workflow: a `v*` tag builds the backend and frontend images and, once the tagged commit's checks are green, creates a GitHub release with the version's CHANGELOG.md section as its notes; the images are pushed to the GitHub Container Registry only when the repository variable `PUBLISH_IMAGES` is `true` (unset by default).
 
 ### Changed
 
