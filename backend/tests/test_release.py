@@ -152,3 +152,73 @@ def test_main_reads_json_lines_and_exits_nonzero_on_failure(capsys):
     assert check_runs_green.main(["99"], lines) == 1
     assert "b: failure" in capsys.readouterr().err
     assert check_runs_green.main(["99"], json.dumps(check("a"))) == 0
+
+
+spec = importlib.util.spec_from_file_location(
+    "changelog_section", REPO / "scripts/changelog_section.py"
+)
+changelog_section = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(changelog_section)
+
+SAMPLE_CHANGELOG = """# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Next thing.
+
+## [1.0.0] - 2026-11-06
+
+Intro.
+
+### Added
+
+- First thing.
+
+## [0.9.0] - 2026-01-01
+
+- Old thing.
+
+## [2.0.0] - 2026-12-01
+"""
+
+
+def write_changelog(tmp_path, text=SAMPLE_CHANGELOG):
+    path = tmp_path / "CHANGELOG.md"
+    path.write_text(text)
+    return str(path)
+
+
+def test_changelog_section_returns_the_version_without_the_next_heading(tmp_path, capsys):
+    code = changelog_section.main([VERSION, write_changelog(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert out.startswith("Intro.")
+    assert "- First thing." in out
+    assert "## [" not in out
+    assert "Old thing" not in out
+    assert "Next thing" not in out
+
+
+def test_changelog_section_exits_non_zero_for_a_missing_version(tmp_path, capsys):
+    assert changelog_section.main(["9.9.9", write_changelog(tmp_path)]) == 1
+    assert capsys.readouterr().out == ""
+
+
+def test_changelog_section_exits_non_zero_for_an_empty_section(tmp_path, capsys):
+    assert changelog_section.main(["2.0.0", write_changelog(tmp_path)]) == 1
+    assert capsys.readouterr().out == ""
+
+
+def test_changelog_section_of_the_real_changelog_is_not_empty(capsys):
+    assert changelog_section.main([VERSION]) == 0
+    assert capsys.readouterr().out.strip()
+
+
+def test_changelog_section_prints_usage_and_exits_2_without_a_version_or_with_too_many(
+    capsys,
+):
+    assert changelog_section.main([]) == 2
+    assert changelog_section.main(["1", "2", "3"]) == 2
+    assert capsys.readouterr().err.count("usage: changelog_section.py") == 2
