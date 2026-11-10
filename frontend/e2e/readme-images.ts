@@ -3,6 +3,8 @@ export const README_IMAGES = {
   upload: 'upload.png',
   answer: 'answer.png',
   citation: 'citation.png',
+  dark: 'dark.png',
+  phone: 'phone.png',
   gif: 'demo.gif',
 } as const
 

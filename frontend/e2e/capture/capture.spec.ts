@@ -76,6 +76,16 @@ test('captures the README screenshots and GIF', async ({ page, api }) => {
   await page.screenshot({ path: OUT + README_IMAGES.answer })
   await snap()
 
+  // Dark and phone shots come from the clean answered state, before the viewer opens.
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.screenshot({ path: OUT + README_IMAGES.dark })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.setViewportSize({ width: 390, height: 780 })
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.screenshot({ path: OUT + README_IMAGES.phone })
+  await page.setViewportSize({ width: 960, height: 640 })
+
   const chip = answer.getByRole('note', { name: 'Citation' }).first()
   await chip.click()
   await chip.hover()

@@ -16,6 +16,36 @@ Chat with your own PDFs and get answers you can trust: every answer cites the qu
 
 ![The whole flow: upload, ask, read the cited answer](docs/img/demo.gif)
 
+![The same page in dark mode](docs/img/dark.png)
+
+![The page at phone width](docs/img/phone.png)
+
+## Try it
+
+You need Docker with the Compose plugin (`docker compose version`) and [Ollama](https://ollama.com) running on the same machine.
+
+1. Pull the three local models the default settings use:
+
+   ```bash
+   ollama pull llama3.2
+   ollama pull qwen3:14b
+   ollama pull nomic-embed-text
+   ```
+
+2. Start the stack:
+
+   ```bash
+   cp .env.example .env
+   docker compose up --build
+   ```
+
+3. Open <http://localhost:8080>. In the empty documents panel, click **Try a sample PDF**; it uploads a small sample PDF into the `default` collection.
+4. When the document shows "Ready", ask a question about it and press **Ask**.
+
+You should see the answer stream in, each claim followed by a citation chip with the file and page it came from; click a chip to open the PDF at that page with the quote highlighted. A question the sample does not cover is answered "Not in your documents". If the model cannot be reached, the page says so and names `LLM_BASE_URL` as the setting to check.
+
+No local models? Use the cloud block instead: in `.env`, replace the local block with the commented cloud block (`LLM_BASE_URL`, `LLM_API_KEY` and the three model names), then run `docker compose up --build`. See [Configuration](#configuration).
+
 ## Run it
 
 You need Docker with the Compose plugin (`docker compose version`).
