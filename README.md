@@ -202,7 +202,7 @@ The page works from the keyboard alone. The first Tab reaches a "Skip to chat" l
 ./scripts/compose-smoke.sh
 ```
 
-Builds the full stack on throwaway ports, then checks the backend health endpoint, the pgvector extension, that the frontend serves its page, and that the frontend proxies `/api` to the backend.
+Builds the full stack on throwaway ports, then checks the backend health endpoint, the pgvector extension, that the frontend serves its page, and that the frontend proxies `/api` to the backend. It needs Docker, `curl` and `jq`, and no model key: `docker-compose.smoke.yml` adds a fake OpenAI-compatible model (`scripts/fake-llm/`) and points the backend at it. With the fake, the smoke uploads the sample PDF, asks a question it answers, prints the cited answer and checks it cites the sample's page; then it stops the fake, asks again and checks the answer fails with "the model endpoint is unreachable". The fake matches words, it does not read: never point a real stack at it.
 
 The frontend's nginx forwards `/api` to the host `llm-pdf-chatbot-backend`: the backend's network alias in `docker-compose.yml` and its container name in `docker-compose.proxy.yml`. A compose file of your own that runs the frontend image needs that name on the backend too.
 
@@ -233,5 +233,6 @@ Changes are listed in [CHANGELOG.md](CHANGELOG.md). Pushing a `v*` tag (for exam
 - `frontend/` — React + TypeScript UI (Vite), served by nginx
 - `db/init/` — database bootstrap (pgvector extension)
 - `scripts/compose-smoke.sh` — end-to-end smoke test
+- `scripts/fake-llm/` — the smoke's fake model (`docker-compose.smoke.yml` runs it)
 - `scripts/proxy-compose-check.sh` — checks `docker-compose.proxy.yml` (no host port, no model server)
 - `scripts/check_runs_green.py` — release gate: fails unless a commit's check runs are green

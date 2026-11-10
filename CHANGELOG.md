@@ -6,6 +6,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Added
 
+- The compose smoke test (`scripts/compose-smoke.sh`) now asks a question end to end: a fake OpenAI-compatible model (`scripts/fake-llm/`, added by `docker-compose.smoke.yml`) answers it, the smoke checks the streamed answer cites the sample PDF's page, then stops the fake and checks the answer fails as "the model endpoint is unreachable". `docker-compose.yml` is unchanged.
 - `docker-compose.proxy.yml` and `docs/deploy/reverse-proxy.md`: a private review stack at `chat.example.com` behind Traefik and Authelia, with no published ports, no model server and no source mounts, settings from an `.env.proxy` kept only on the host; `scripts/proxy-compose-check.sh` checks it in CI.
 
 ### Changed

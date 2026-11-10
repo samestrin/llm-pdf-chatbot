@@ -1,0 +1,24 @@
+# The compose smoke's override (scripts/compose-smoke.sh selects it with COMPOSE_FILE):
+# a fake OpenAI-compatible model (scripts/fake-llm/), and the backend pointed at it, so
+# the smoke can ask a question and get a cited answer with no key and no network.
+# Not for real use: the fake answers by matching words, not by reading.
+services:
+  fake-llm:
+    build: ./scripts/fake-llm
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    environment:
+      LLM_BASE_URL: http://fake-llm:8080/v1
+      LLM_FAST_MODEL: fake-fast
+      LLM_REASONING_MODEL: fake-reasoning
+      LLM_EMBEDDING_MODEL: fake-embed
+      # Short, so the smoke's unreachable-model check fails fast.
+      LLM_TIMEOUT_SECONDS: "10"
+    depends_on:
+      fake-llm:
+        condition: service_healthy
