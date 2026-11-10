@@ -34,7 +34,7 @@ from app.db import (
     ingestion_status,
 )
 from app.documents import Limits, stored_path
-from app.llm import LLMClient, LLMConfig
+from app.llm import LLMClient, LLMConfig, LLMConnectionError
 from app.pages import store_pages
 from app.reader import read_pdf
 
@@ -162,8 +162,12 @@ class IngestWorker:
             if not self._exists(document_id):
                 return
             log.warning("ingestion of %s failed: %s", document_id, exc)
+            if isinstance(exc, LLMConnectionError):
+                reason = "the model endpoint is unreachable (check LLM_BASE_URL)"
+            else:
+                reason = str(exc) or type(exc).__name__
             with self.engine.begin() as conn:
-                _set(conn, document_id, state="failed", error=str(exc) or type(exc).__name__)
+                _set(conn, document_id, state="failed", error=reason)
 
     def _ingest(self, document_id: str) -> None:
         read = read_pdf(stored_path(self.limits, document_id))

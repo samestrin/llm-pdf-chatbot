@@ -17,7 +17,7 @@ from app.db import (
     init_db,
     pages,
 )
-from app.llm import LLMHTTPError
+from app.llm import LLMConnectionError, LLMHTTPError
 from app.main import create_app
 
 VOCABULARY = ["zebras", "glacier", "budget", "section"]
@@ -242,6 +242,17 @@ def test_embedding_failure_fails_the_document_with_the_reason(start, db_engine, 
     assert "HTTP 503" in final["error"]
     # The pages read before the failure stay, so their per-page results can be shown.
     assert count(db_engine, pages, doc_id) == 20
+
+
+def test_unreachable_embedding_endpoint_names_llm_base_url(start, db_engine, embedder):
+    embedder.error = LLMConnectionError("model endpoint unreachable: refused")
+    client = start()
+    doc_id = upload(client)["id"]
+    client.app.state.worker.join()
+
+    final = status(db_engine, doc_id)
+    assert final["state"] == "failed"
+    assert "LLM_BASE_URL" in final["error"]
 
 
 def test_missing_model_settings_fail_the_document(start, db_engine):

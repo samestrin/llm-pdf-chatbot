@@ -369,6 +369,7 @@ def test_an_unreachable_model_gives_an_error_event(server):
     events = run(server)
 
     assert types(events) == ["error"]
+    assert "LLM_BASE_URL" in events[0]["message"]
 
 
 def test_a_stream_cut_off_halfway_gives_an_error_after_the_claims_so_far(server):

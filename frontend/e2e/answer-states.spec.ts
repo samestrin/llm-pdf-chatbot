@@ -104,6 +104,13 @@ test('an error event is shown as an error, after whatever came before it', async
   await expect(answer.getByLabel('Answer details')).toHaveCount(0)
 })
 
+test('an unreachable model endpoint is shown with what to check', async ({ page, api }) => {
+  const message = 'the answer failed: the model endpoint is unreachable (check LLM_BASE_URL)'
+  const answer = await ask(page, api, ndjson({ type: 'error', message }))
+
+  await expect(answer.getByRole('alert')).toContainText('check LLM_BASE_URL')
+})
+
 test('an error event with no message is still shown, never an empty answer', async ({
   page,
   api,

@@ -662,7 +662,7 @@ def _client_reason(exc: Exception) -> str | None:
         case LLMTimeoutError():
             return "the model endpoint did not answer in time"
         case LLMConnectionError():
-            return "the model endpoint is unreachable"
+            return "the model endpoint is unreachable (check LLM_BASE_URL)"
         case LLMStreamError():
             return "the model stream failed"
         case AnswerFormatError():
