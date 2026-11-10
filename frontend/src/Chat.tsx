@@ -20,6 +20,9 @@ const DEEP_NOTE =
 
 interface Turn {
   question: string
+  /** Where and how it was asked, so a retry asks it the same way. */
+  collection: string
+  mode: ChatMode
   /** Deep mode's sub-questions, in the order they arrived. */
   steps: StepEvent[]
   claims: ClaimEvent[]
@@ -108,7 +111,16 @@ function Steps({ steps }: { steps: StepEvent[] }) {
   )
 }
 
-function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void }) {
+function Answer({
+  turn,
+  onOpen,
+  onRetry,
+}: {
+  turn: Turn
+  onOpen: (c: ClaimEvent) => void
+  /** Ask the same question again; `undefined` while another answer streams. */
+  onRetry?: () => void
+}) {
   // A finished answer with no claim, no refusal and no error would show nothing.
   const empty =
     turn.done !== null && turn.claims.length === 0 && turn.refusal === null && !turn.error
@@ -126,7 +138,14 @@ function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void 
       )}
       {turn.refusal && <Refusal passages={turn.refusal} />}
       {turn.streaming && turn.claims.length === 0 && turn.refusal === null && <p>Thinking…</p>}
-      {turn.error && <p role="alert">{turn.error}</p>}
+      {turn.error && (
+        <>
+          <p role="alert">{turn.error}</p>
+          <button type="button" onClick={onRetry} disabled={!onRetry}>
+            Retry
+          </button>
+        </>
+      )}
       {empty && <p role="alert">The answer came back empty.</p>}
       {turn.stopped && <p role="status">You stopped this answer before it finished.</p>}
       {turn.done && <AnswerMeta done={turn.done} />}
@@ -134,7 +153,27 @@ function Answer({ turn, onOpen }: { turn: Turn; onOpen: (c: ClaimEvent) => void 
   )
 }
 
-export default function Chat({ collections }: { collections: string[] }) {
+function stillReading(files: string[]): string {
+  const one = files.length === 1
+  return `Still reading ${files.join(', ')}. Answers leave ${one ? 'it' : 'them'} out until ${
+    one ? 'it is' : 'they are'
+  } ready.`
+}
+
+export default function Chat({
+  collections,
+  loading = false,
+  empty = false,
+  ingesting = {},
+}: {
+  collections: string[]
+  /** The collections are still loading for the first time. */
+  loading?: boolean
+  /** The collections loaded, and none holds a document yet. */
+  empty?: boolean
+  /** Filenames still being read, by collection name. */
+  ingesting?: Record<string, string[]>
+}) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
   const [mode, setMode] = useState<ChatMode>('fast')
@@ -152,27 +191,36 @@ export default function Chat({ collections }: { collections: string[] }) {
         : (collections[0] ?? '')
   const streaming = turns.some((t) => t.streaming)
 
-  async function onAsk(e: FormEvent) {
+  function onAsk(e: FormEvent) {
     e.preventDefault()
     const q = question.trim()
     if (!q || !collection || streaming) return
-    const index = turns.length
+    setQuestion('')
+    void run({ question: q, collection, mode }, turns.length)
+  }
+
+  /** Stream the answer into turn `index`: a new turn, or a failed one asked again. */
+  async function run(
+    { question: q, collection, mode }: Pick<Turn, 'question' | 'collection' | 'mode'>,
+    index: number,
+  ) {
     const update = (f: (t: Turn) => Turn) =>
       setTurns((all) => all.map((t, i) => (i === index ? f(t) : t)))
-    setTurns((all) => [
-      ...all,
-      {
-        question: q,
-        steps: [],
-        claims: [],
-        refusal: null,
-        error: null,
-        done: null,
-        streaming: true,
-        stopped: false,
-      },
-    ])
-    setQuestion('')
+    const fresh: Turn = {
+      question: q,
+      collection,
+      mode,
+      steps: [],
+      claims: [],
+      refusal: null,
+      error: null,
+      done: null,
+      streaming: true,
+      stopped: false,
+    }
+    setTurns((all) =>
+      index < all.length ? all.map((t, i) => (i === index ? fresh : t)) : [...all, fresh],
+    )
 
     const abort = new AbortController()
     controller.current = abort
@@ -201,12 +249,30 @@ export default function Chat({ collections }: { collections: string[] }) {
   }
 
   return (
-    <section aria-labelledby="chat-heading" className="panel chat">
+    <section aria-labelledby="chat-heading" aria-busy={loading} className="panel chat">
       <h2 id="chat-heading">Chat</h2>
+      {loading && (
+        <p className="loading">
+          <span className="spinner" aria-hidden="true" /> Loading your documents…
+        </p>
+      )}
+      {!loading && turns.length === 0 && empty && (
+        <div className="empty-state">
+          <h3>Nothing to ask about yet</h3>
+          <p>
+            Upload a PDF in the Documents panel, then ask a question about it here. Every answer
+            cites the page it came from.
+          </p>
+        </div>
+      )}
       {turns.map((turn, i) => (
         <div key={i} className="chat-turn">
           <article aria-label="Question" className="question">{turn.question}</article>
-          <Answer turn={turn} onOpen={setOpened} />
+          <Answer
+            turn={turn}
+            onOpen={setOpened}
+            onRetry={streaming ? undefined : () => void run(turn, i)}
+          />
         </div>
       ))}
       {opened && (
@@ -254,7 +320,9 @@ export default function Chat({ collections }: { collections: string[] }) {
           </>
         )}
         {mode === 'deep' && <p className="deep-note">{DEEP_NOTE}</p>}
-        {collections.length === 0 && <p>Upload a document to ask about it.</p>}
+        {ingesting[collection]?.length ? (
+          <p className="ingesting-note">{stillReading(ingesting[collection])}</p>
+        ) : null}
       </form>
     </section>
   )

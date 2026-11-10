@@ -47,6 +47,8 @@ export default function PdfViewer({
 }) {
   const { document: doc, page, quote, boxes } = citation
   const [view, setView] = useState<View>({ state: 'loading' })
+  // Bumped by Retry to open the PDF again.
+  const [attempt, setAttempt] = useState(0)
   const [size, setSize] = useState<{
     width: number
     height: number
@@ -136,7 +138,12 @@ export default function PdfViewer({
       layer?.cancel()
       void task.destroy()
     }
-  }, [doc.id, doc.filename, page, quote, boxes])
+  }, [doc.id, doc.filename, page, quote, boxes, attempt])
+
+  function onRetry() {
+    setView({ state: 'loading' })
+    setAttempt((n) => n + 1)
+  }
 
   const pageStyle = (
     size
@@ -149,7 +156,12 @@ export default function PdfViewer({
   ) as CSSProperties | undefined
 
   return (
-    <section role="dialog" aria-label={`${doc.filename}, page ${page}`} className="pdf-viewer">
+    <section
+      role="dialog"
+      aria-label={`${doc.filename}, page ${page}`}
+      aria-busy={view.state === 'loading'}
+      className="pdf-viewer"
+    >
       <header>
         <h3>
           {doc.filename}
@@ -166,8 +178,19 @@ export default function PdfViewer({
           ×
         </button>
       </header>
-      {view.state === 'loading' && <p>Opening page {page}…</p>}
-      {view.state === 'error' && <p role="alert">{view.message}</p>}
+      {view.state === 'loading' && (
+        <p className="loading">
+          <span className="spinner" aria-hidden="true" /> Opening page {page}…
+        </p>
+      )}
+      {view.state === 'error' && (
+        <div className="pdf-viewer-error">
+          <p role="alert">{view.message}</p>
+          <button type="button" onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      )}
       <div className="pdf-viewer-body">
         <div ref={frame} className="pdf-viewer-frame" hidden={view.state === 'error'}>
           <div className="pdf-page" style={pageStyle}>

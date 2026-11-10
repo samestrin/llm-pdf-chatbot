@@ -37,6 +37,11 @@ export interface DocumentInfo {
   status: DocumentStatus
 }
 
+/** The document is still queued or being read, so answers do not use it yet. */
+export function isIngesting(doc: DocumentInfo): boolean {
+  return doc.status.state === 'queued' || doc.status.state === 'processing'
+}
+
 export interface Collection {
   id: number
   name: string

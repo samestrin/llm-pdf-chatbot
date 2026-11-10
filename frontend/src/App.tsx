@@ -2,21 +2,27 @@ import { useCallback, useEffect, useState } from 'react'
 import Chat from './Chat'
 import ThemeToggle from './ThemeToggle'
 import DocumentsPanel from './DocumentsPanel'
-import { getHealth, type Collection, type Health } from './api'
+import { getHealth, isIngesting, type Collection, type Health } from './api'
 
 export default function App() {
   const [health, setHealth] = useState<Health | 'checking'>('checking')
-  const [collections, setCollections] = useState<string[]>([])
-  const onCollections = useCallback(
-    (loaded: Collection[]) => setCollections(loaded.map((c) => c.name)),
-    [],
-  )
+  // `null` until the documents panel first loads them.
+  const [collections, setCollections] = useState<Collection[] | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const onLoadError = useCallback((message: string | null) => setLoadFailed(message !== null), [])
 
   useEffect(() => {
     const controller = new AbortController()
     getHealth(controller.signal).then(setHealth, () => {})
     return () => controller.abort()
   }, [])
+
+  const ingesting = Object.fromEntries(
+    (collections ?? []).map((c) => [
+      c.name,
+      c.documents.filter(isIngesting).map((d) => d.filename),
+    ]),
+  )
 
   return (
     <main>
@@ -26,8 +32,13 @@ export default function App() {
         <ThemeToggle />
       </div>
       <div className="app-layout">
-        <DocumentsPanel onCollections={onCollections} />
-        <Chat collections={collections} />
+        <DocumentsPanel onCollections={setCollections} onLoadError={onLoadError} />
+        <Chat
+          collections={(collections ?? []).map((c) => c.name)}
+          loading={collections === null && !loadFailed}
+          empty={collections !== null && collections.every((c) => c.documents.length === 0)}
+          ingesting={ingesting}
+        />
       </div>
     </main>
   )

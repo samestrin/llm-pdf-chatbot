@@ -387,3 +387,49 @@ progress {
 progress {
   accent-color: var(--color-accent);
 }
+
+/* Loading, first-run and still-reading states */
+
+.loading,
+.ingesting-note {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spinner {
+    animation: spin 0.8s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.empty-state {
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.empty-state h3 {
+  margin-top: 0;
+}
+
+.empty-state p {
+  color: var(--color-muted);
+  margin-bottom: 0;
+}

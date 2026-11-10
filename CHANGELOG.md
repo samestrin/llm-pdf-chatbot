@@ -6,6 +6,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Added
 
+- First-run empty states in the documents panel and the chat that say what to do next; a spinner while the documents load and while a cited page opens; a Retry button on a failed document load, upload, answer and PDF viewer open (an answer is asked again in the collection and mode it was first asked in); and a note on each document still being read, and in the chat for the chosen collection, that answers leave it out until it is ready.
 - A "Try a sample PDF" button in the empty documents panel: one click uploads a small sample PDF, written for this repo and served by the frontend, into the selected collection.
 
 ### Changed
