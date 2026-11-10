@@ -19,3 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/compose-smoke.sh
+
+  proxy-compose:
+    # docker-compose.proxy.yml parses and keeps its review-stack shape (docs/deploy/reverse-proxy.md).
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/proxy-compose-check.sh

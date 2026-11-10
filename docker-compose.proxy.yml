@@ -1,0 +1,88 @@
+# Private review stack for https://chat.example.com on proxy host, behind Traefik and
+# Authelia. See docs/deploy/reverse-proxy.md.
+#
+# - No `ports:`. Traefik reaches the frontend by container name over the external
+#   `proxy` network; the frontend's nginx forwards /api to the backend.
+# - No model server. The backend calls the fleet litellm with its own key.
+# - The images are built on proxy host from this folder and named by compose's default
+#   <project>-<service> (llm-pdf-chatbot-backend, llm-pdf-chatbot-frontend), which the
+#   deploy receiver tags :rollback; so no built service sets `image:`.
+# - The deploy receiver dumps the database before each deploy through the service `db`
+#   and checks the volume llm-pdf-chatbot_db-data: keep the project name, the service
+#   name `db` and the volume name `db-data`.
+# - Settings come from `.env.proxy`, which exists only on proxy host and is never in git.
+name: llm-pdf-chatbot
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: llm-pdf-chatbot-db
+    restart: unless-stopped
+    # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB. The backend creates the vector
+    # extension itself on start (backend/app/db.py), so no init folder is mounted.
+    env_file: .env.proxy
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - default
+
+  backend:
+    build: ./backend
+    container_name: llm-pdf-chatbot-backend
+    restart: unless-stopped
+    env_file: .env.proxy
+    environment:
+      UPLOAD_DIR: /app/data/uploads
+    volumes:
+      - uploads:/app/data/uploads
+    logging: *logging
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # `proxy` too, so the backend reaches the ocr API by its name there (OCR_URL).
+    networks:
+      - default
+      - proxy
+
+  frontend:
+    build: ./frontend
+    container_name: llm-pdf-chatbot-frontend
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - default
+      - proxy
+
+volumes:
+  db-data:
+  uploads:
+
+networks:
+  proxy:
+    external: true

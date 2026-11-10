@@ -41,6 +41,11 @@ services:
       LLM_PRICE_FAST_PER_MTOK_OUT: ${LLM_PRICE_FAST_PER_MTOK_OUT:-}
     volumes:
       - uploads:/app/data/uploads
+    networks:
+      default:
+        # The name the frontend's nginx forwards /api to (frontend/nginx.conf).
+        aliases:
+          - llm-pdf-chatbot-backend
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
