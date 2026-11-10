@@ -151,3 +151,24 @@ test('stops polling once every document is settled', async ({ page, api }) => {
   await page.waitForTimeout(5000) // more than two poll intervals
   expect(count()).toBe(before)
 })
+
+test('the empty state offers a sample PDF that uploads and appears in the list', async ({
+  page,
+  api,
+}) => {
+  let documents: ReturnType<typeof doc>[] = []
+  api.on('GET', '/api/collections', (route) =>
+    json([{ id: 1, name: 'default', documents }])(route),
+  )
+  api.on('POST', '/api/collections/default/documents', async (route) => {
+    documents = [doc('s', 'sample.pdf', { state: 'queued', pages_read: 0 })]
+    await route.fulfill({ status: 201, json: { id: 's' } })
+  })
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Try a sample PDF' }).click()
+  await expect(page.getByText('sample.pdf', { exact: true })).toBeVisible()
+  await expect(page.getByText('Queued: 0 of 3 pages')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Try a sample PDF' })).toHaveCount(0)
+  expect(api.calls).toContain('POST /api/collections/default/documents')
+})

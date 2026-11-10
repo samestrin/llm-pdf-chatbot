@@ -9,6 +9,8 @@ import {
 
 const POLL_MS = 2000
 const DEFAULT_COLLECTION = 'default'
+const SAMPLE_URL = '/samples/sample.pdf'
+const SAMPLE_NAME = 'sample.pdf'
 
 function isBusy(doc: DocumentInfo): boolean {
   return doc.status.state === 'queued' || doc.status.state === 'processing'
@@ -112,6 +114,25 @@ export default function DocumentsPanel({
     }
   }
 
+  async function onSample() {
+    const name = collection.trim()
+    if (!name) return
+    setActionError(null)
+    setProgress(0)
+    try {
+      const res = await fetch(SAMPLE_URL)
+      if (!res.ok) throw new Error(`could not load the sample PDF (${res.status})`)
+      const blob = await res.blob()
+      const sample = new File([blob], SAMPLE_NAME, { type: 'application/pdf' })
+      await uploadDocument(name, sample, setProgress)
+      await refresh()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'upload failed')
+    } finally {
+      setProgress(null)
+    }
+  }
+
   async function onDelete(doc: DocumentInfo) {
     if (!window.confirm(`Delete ${doc.filename}?`)) return
     setActionError(null)
@@ -149,6 +170,18 @@ export default function DocumentsPanel({
           </p>
         )}
       </form>
+      {!loadError && collections.every((c) => c.documents.length === 0) && (
+        <p>
+          No documents yet.{' '}
+          <button
+            type="button"
+            onClick={() => void onSample()}
+            disabled={!collection.trim() || progress !== null}
+          >
+            Try a sample PDF
+          </button>
+        </p>
+      )}
       {actionError && <p role="alert">{actionError}</p>}
       {loadError && <p role="alert">Could not load documents: {loadError}</p>}
       {collections.map((c) => (

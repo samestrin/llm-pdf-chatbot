@@ -52,4 +52,73 @@ describe('DocumentsPanel', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(screen.queryByRole('alert')).toBeNull()
   })
+
+  describe('sample PDF', () => {
+    const uploads: string[] = []
+    let docs: unknown[] = []
+    class FakeXhr {
+      upload = {} as { onprogress?: unknown }
+      status = 201
+      responseText = '{"id":"s"}'
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      open(_m: string, url: string) {
+        uploads.push(url)
+      }
+      send(body: FormData) {
+        uploads.push((body.get('file') as File).name)
+        docs = [
+          {
+            ...busyDoc,
+            id: 's',
+            filename: 'sample.pdf',
+            status: { ...busyDoc.status, state: 'ready', pages_read: 3 },
+          },
+        ]
+        this.onload?.()
+      }
+    }
+    const stubFetch = (sample: () => Promise<Response>) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) =>
+          url === '/samples/sample.pdf'
+            ? sample()
+            : Promise.resolve(Response.json([{ id: 1, name: 'default', documents: docs }])),
+        ),
+      )
+
+    beforeEach(() => {
+      uploads.length = 0
+      docs = []
+      vi.stubGlobal('XMLHttpRequest', FakeXhr)
+    })
+
+    it('uploads the sample into the selected collection from the empty state', async () => {
+      stubFetch(() => Promise.resolve(new Response('%PDF-1.4', { status: 200 })))
+      render(<DocumentsPanel />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Try a sample PDF' }))
+      await screen.findByText('Ready: 3 pages')
+      expect(uploads).toEqual(['/api/collections/default/documents', 'sample.pdf'])
+      expect(screen.queryByRole('button', { name: 'Try a sample PDF' })).toBeNull()
+    })
+
+    it('says so, and uploads nothing, when the sample is missing', async () => {
+      stubFetch(() => Promise.resolve(new Response('nope', { status: 404 })))
+      render(<DocumentsPanel />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Try a sample PDF' }))
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        'could not load the sample PDF (404)',
+      )
+      expect(uploads).toEqual([])
+    })
+
+    it('says so, and uploads nothing, when the sample cannot be fetched', async () => {
+      stubFetch(() => Promise.reject(new Error('offline')))
+      render(<DocumentsPanel />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Try a sample PDF' }))
+      expect((await screen.findByRole('alert')).textContent).toBe('offline')
+      expect(uploads).toEqual([])
+    })
+  })
 })

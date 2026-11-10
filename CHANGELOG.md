@@ -4,6 +4,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- A "Try a sample PDF" button in the empty documents panel: one click uploads a small sample PDF, written for this repo and served by the frontend, into the selected collection.
+
 ### Changed
 
 - A refreshed page look built on one set of design tokens (colour, type, spacing, radius, shadow, focus ring) in `theme.css`; light and dark text pass WCAG AA contrast. On a desktop the documents panel is a sidebar beside the chat; on a phone it stacks above the chat, the question box stays at the bottom of the screen, and the PDF viewer fills the screen.
