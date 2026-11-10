@@ -176,7 +176,7 @@ export default function DocumentsPanel({
     !loading && !loadError && collections.every((c) => c.documents.length === 0)
 
   return (
-    <section
+    <aside
       aria-labelledby="documents-heading"
       aria-busy={loading}
       className="panel documents-panel"
@@ -254,6 +254,6 @@ export default function DocumentsPanel({
           </ul>
         </div>
       ))}
-    </section>
+    </aside>
   )
 }

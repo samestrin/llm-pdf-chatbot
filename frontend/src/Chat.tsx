@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import AnswerMeta from './AnswerMeta'
 import {
   streamChat,
@@ -58,10 +58,12 @@ function apply(turn: Turn, event: ChatEvent): Turn {
   }
 }
 
-function Citation({ claim, onOpen }: { claim: ClaimEvent; onOpen: (c: ClaimEvent) => void }) {
+type OnOpen = (c: ClaimEvent, chip: HTMLButtonElement) => void
+
+function Citation({ claim, onOpen }: { claim: ClaimEvent; onOpen: OnOpen }) {
   return (
     <span role="note" aria-label="Citation" className="citation-chip" title={claim.quote}>
-      <button type="button" onClick={() => onOpen(claim)}>
+      <button type="button" onClick={(e) => onOpen(claim, e.currentTarget)}>
         {claim.document.filename}, p. {claim.page}
       </button>
     </span>
@@ -117,7 +119,7 @@ function Answer({
   onRetry,
 }: {
   turn: Turn
-  onOpen: (c: ClaimEvent) => void
+  onOpen: OnOpen
   /** Ask the same question again; `undefined` while another answer streams. */
   onRetry?: () => void
 }) {
@@ -125,7 +127,8 @@ function Answer({
   const empty =
     turn.done !== null && turn.claims.length === 0 && turn.refusal === null && !turn.error
   return (
-    <article aria-label="Answer" aria-busy={turn.streaming}>
+    // Polite: a screen reader reads the claims as they stream in, without cutting in.
+    <article aria-label="Answer" aria-busy={turn.streaming} aria-live="polite">
       {turn.steps.length > 0 && <Steps steps={turn.steps} />}
       {turn.claims.length > 0 && (
         <ul aria-label="Claims">
@@ -179,6 +182,8 @@ export default function Chat({
   const [mode, setMode] = useState<ChatMode>('fast')
   const [turns, setTurns] = useState<Turn[]>([])
   const [opened, setOpened] = useState<ClaimEvent | null>(null)
+  // The chip that opened the viewer, so closing it puts focus back there.
+  const chip = useRef<HTMLButtonElement | null>(null)
   const controller = useRef<AbortController | null>(null)
 
   useEffect(() => () => controller.current?.abort(), [])
@@ -197,6 +202,23 @@ export default function Chat({
     if (!q || !collection || streaming) return
     setQuestion('')
     void run({ question: q, collection, mode }, turns.length)
+  }
+
+  // Enter asks; Shift+Enter, or Enter while an input method composes, is left to the browser.
+  function onQuestionKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    e.preventDefault()
+    e.currentTarget.form?.requestSubmit()
+  }
+
+  function onOpen(claim: ClaimEvent, from: HTMLButtonElement) {
+    chip.current = from
+    setOpened(claim)
+  }
+
+  function onClose() {
+    setOpened(null)
+    chip.current?.focus()
   }
 
   /** Stream the answer into turn `index`: a new turn, or a failed one asked again. */
@@ -270,7 +292,7 @@ export default function Chat({
           <article aria-label="Question" className="question">{turn.question}</article>
           <Answer
             turn={turn}
-            onOpen={setOpened}
+            onOpen={onOpen}
             onRetry={streaming ? undefined : () => void run(turn, i)}
           />
         </div>
@@ -280,7 +302,7 @@ export default function Chat({
           <PdfViewer
             key={`${opened.chunk_id}:${opened.page}:${opened.quote}`}
             citation={opened}
-            onClose={() => setOpened(null)}
+            onClose={onClose}
           />
         </Suspense>
       )}
@@ -297,7 +319,12 @@ export default function Chat({
         </label>{' '}
         <label className="question-field">
           Ask a question{' '}
-          <input value={question} onChange={(e) => setQuestion(e.target.value)} />
+          <textarea
+            rows={1}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={onQuestionKey}
+          />
         </label>{' '}
         <label>
           <input

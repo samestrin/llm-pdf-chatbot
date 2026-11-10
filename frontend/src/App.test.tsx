@@ -20,6 +20,23 @@ describe('App', () => {
     ).toBeInTheDocument()
   })
 
+  it('has a skip link to the main landmark, a header and a documents sidebar', () => {
+    stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
+    render(<App />)
+
+    const skip = screen.getByRole('link', { name: 'Skip to chat' })
+    const main = screen.getByRole('main')
+    expect(skip).toHaveAttribute('href', `#${main.id}`)
+    expect(main).toHaveAttribute('tabindex', '-1')
+    // The skip link is the first thing a keyboard reaches.
+    expect(document.body.querySelector('a, button, input, select, textarea')).toBe(skip)
+    expect(within(screen.getByRole('banner')).getByRole('heading', { level: 1 })).toHaveTextContent(
+      'LLM PDF Chatbot',
+    )
+    expect(screen.getByRole('complementary', { name: 'Documents' })).toBeInTheDocument()
+    expect(within(main).getByRole('region', { name: 'Chat' })).toBeInTheDocument()
+  })
+
   it('asks the backend for its health at same-origin /api/health', async () => {
     const fetch = stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
     render(<App />)

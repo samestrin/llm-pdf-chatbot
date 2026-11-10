@@ -63,8 +63,11 @@ async function ask(page: Page, question: string) {
 const horizontalOverflow = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
 
-const box = async (page: Page, name: string) =>
-  (await page.getByRole('region', { name }).boundingBox())!
+// The documents panel is the page's sidebar; the chat is a region of the main landmark.
+const box = async (page: Page, name: 'Documents' | 'Chat') =>
+  (await page
+    .getByRole(name === 'Documents' ? 'complementary' : 'region', { name })
+    .boundingBox())!
 
 for (const scheme of ['light', 'dark'] as const) {
   for (const width of WIDTHS) {

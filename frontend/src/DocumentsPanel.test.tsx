@@ -73,7 +73,7 @@ describe('DocumentsPanel', () => {
     vi.stubGlobal('fetch', () => new Promise<Response>((r) => (answer = r)))
     render(<DocumentsPanel />)
 
-    const panel = screen.getByRole('region', { name: 'Documents' })
+    const panel = screen.getByRole('complementary', { name: 'Documents' })
     expect(within(panel).getByText('Loading documents…')).toBeInTheDocument()
     expect(panel).toHaveAttribute('aria-busy', 'true')
     expect(within(panel).queryByRole('heading', { name: 'No documents yet' })).toBeNull()

@@ -25,21 +25,26 @@ export default function App() {
   )
 
   return (
-    <main>
-      <div className="app-bar">
+    <div className="app">
+      <a className="skip-link" href="#main">
+        Skip to chat
+      </a>
+      <header className="app-bar">
         <h1>LLM PDF Chatbot</h1>
         <p role="status">Backend: {health}</p>
         <ThemeToggle />
-      </div>
+      </header>
       <div className="app-layout">
         <DocumentsPanel onCollections={setCollections} onLoadError={onLoadError} />
-        <Chat
-          collections={(collections ?? []).map((c) => c.name)}
-          loading={collections === null && !loadFailed}
-          empty={collections !== null && collections.every((c) => c.documents.length === 0)}
-          ingesting={ingesting}
-        />
+        <main id="main" tabIndex={-1}>
+          <Chat
+            collections={(collections ?? []).map((c) => c.name)}
+            loading={collections === null && !loadFailed}
+            empty={collections !== null && collections.every((c) => c.documents.length === 0)}
+            ingesting={ingesting}
+          />
+        </main>
       </div>
-    </main>
+    </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { GlobalWorkerOptions, TextLayer, getDocument } from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { documentPdfUrl, type ClaimEvent } from './api'
@@ -24,6 +24,10 @@ type View =
   | { state: 'error'; message: string }
   // `boxes` drawn from the API, else `located` says whether the text search found the quote.
   | { state: 'ready'; pages: number; boxes: Rect[] | null; located: boolean }
+
+// What Tab can reach inside the viewer.
+const FOCUSABLE =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
 /** Wrap each range of the text layer's spans in a <mark>. */
 function highlight(divs: HTMLElement[], ranges: QuoteRange[]): HTMLElement[] {
@@ -54,6 +58,7 @@ export default function PdfViewer({
     height: number
     scale: number
   } | null>(null)
+  const dialog = useRef<HTMLElement>(null)
   const frame = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const textLayer = useRef<HTMLDivElement>(null)
@@ -140,6 +145,32 @@ export default function PdfViewer({
     }
   }, [doc.id, doc.filename, page, quote, boxes, attempt])
 
+  // Focus moves into the viewer when it opens; the opener puts it back on close.
+  useEffect(() => dialog.current?.focus(), [])
+
+  // Escape closes; Tab and Shift+Tab go round the viewer's controls, never out of it.
+  function onKeyDown(e: KeyboardEvent<HTMLElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onClose()
+      return
+    }
+    if (e.key !== 'Tab') return
+    const controls = [...dialog.current!.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+      (el) => !el.closest('[hidden]'),
+    )
+    const first = controls[0]
+    const last = controls[controls.length - 1]
+    const at = document.activeElement
+    if (e.shiftKey && (at === first || at === dialog.current)) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && at === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
+
   function onRetry() {
     setView({ state: 'loading' })
     setAttempt((n) => n + 1)
@@ -157,8 +188,12 @@ export default function PdfViewer({
 
   return (
     <section
+      ref={dialog}
       role="dialog"
+      aria-modal="true"
       aria-label={`${doc.filename}, page ${page}`}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
       aria-busy={view.state === 'loading'}
       className="pdf-viewer"
     >

@@ -36,7 +36,7 @@ function firstThen(first: MockHandler, rest: MockHandler): MockHandler {
   return (route) => (calls++ === 0 ? first(route) : rest(route))
 }
 
-const documentsPanel = (page: Page) => page.getByRole('region', { name: 'Documents' })
+const documentsPanel = (page: Page) => page.getByRole('complementary', { name: 'Documents' })
 const chat = (page: Page) => page.getByRole('region', { name: 'Chat' })
 
 test.describe('documents panel', () => {

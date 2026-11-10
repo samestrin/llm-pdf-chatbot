@@ -66,4 +66,40 @@ describe('PdfViewer', () => {
     expect(within(dialog).queryByRole('alert')).toBeNull()
     expect(within(dialog).queryByRole('button', { name: 'Retry' })).toBeNull()
   })
+
+  it('takes focus when it opens and closes on Escape', () => {
+    vi.mocked(getDocument).mockReturnValue(task(new Promise(() => {})))
+    const onClose = vi.fn()
+    render(<PdfViewer citation={citation} onClose={onClose} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'report.pdf, page 2' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog).toHaveFocus()
+    fireEvent.keyDown(dialog, { key: 'Enter' })
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Tab and Shift+Tab inside the viewer', async () => {
+    vi.mocked(getDocument).mockReturnValue(task(Promise.reject(new Error('file not found'))))
+    render(<PdfViewer citation={citation} onClose={() => {}} />)
+    const dialog = screen.getByRole('dialog', { name: 'report.pdf, page 2' })
+    const retry = await within(dialog).findByRole('button', { name: 'Retry' })
+    const close = within(dialog).getByRole('button', { name: 'Close' })
+
+    retry.focus()
+    expect(fireEvent.keyDown(retry, { key: 'Tab' })).toBe(false)
+    expect(close).toHaveFocus()
+    expect(fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })).toBe(false)
+    expect(retry).toHaveFocus()
+    // Tab from any control but the last is left to the browser.
+    close.focus()
+    expect(fireEvent.keyDown(close, { key: 'Tab' })).toBe(true)
+    expect(fireEvent.keyDown(close, { key: 'Escape' })).toBe(false)
+    // From the dialog itself, Shift+Tab goes round to the last control.
+    dialog.focus()
+    expect(fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })).toBe(false)
+    expect(retry).toHaveFocus()
+  })
 })

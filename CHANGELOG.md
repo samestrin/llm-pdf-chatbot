@@ -22,6 +22,7 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 - Docker Compose for the whole stack, with a smoke test.
 - First-run empty states in the documents panel and the chat that say what to do next; a spinner while the documents load and while a cited page opens; a Retry button on a failed document load, upload, answer and PDF viewer open (an answer is asked again in the collection and mode it was first asked in); and a note on each document still being read, and in the chat for the chosen collection, that answers leave it out until it is ready.
 - A "Try a sample PDF" button in the empty documents panel: one click uploads a small sample PDF, written for this repo and served by the frontend, into the selected collection.
+- Keyboard and screen-reader support: a "Skip to chat" link; header, documents sidebar and main landmarks; streamed answers read out as they arrive; Enter asks and Shift+Enter starts a new line; the PDF viewer keeps focus inside it, closes on Escape and returns focus to the citation chip; and nothing animates when reduced motion is asked for.
 - A "Try it" section in the README, and refreshed screenshots including a dark-mode and a phone-width image.
 - An evaluation: 40 questions (10 unanswerable) over 5 freely licensed PDFs, scored for accuracy, citation precision, refusal accuracy and cost.
 - A release workflow: a `v*` tag builds the backend and frontend images and, once the tagged commit's checks are green, publishes both to the GitHub Container Registry.

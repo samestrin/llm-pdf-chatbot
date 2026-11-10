@@ -265,4 +265,39 @@ describe('Chat', () => {
       screen.getByText('Still reading x.pdf. Answers leave it out until it is ready.'),
     ).toBeInTheDocument()
   })
+
+  it('reads each answer out politely as it streams', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(ndjson({ type: 'refusal', passages: [] }, { type: 'done', mode: 'fast', model: 'm', cost: null })),
+    )
+    render(<Chat collections={['default']} />)
+    ask('anything')
+    const answer = await screen.findByRole('article', { name: 'Answer' })
+    expect(answer).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('asks on Enter and starts a new line on Shift+Enter', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
+    )
+    vi.stubGlobal('fetch', fetch)
+    render(<Chat collections={['default']} />)
+    const input = screen.getByLabelText('Ask a question')
+    expect(input.tagName).toBe('TEXTAREA')
+    fireEvent.change(input, { target: { value: 'first line' } })
+
+    // Shift+Enter is left to the browser, which inserts the newline.
+    expect(fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })).toBe(true)
+    // Enter while an input method is composing a character does not ask either.
+    expect(fireEvent.keyDown(input, { key: 'Enter', isComposing: true })).toBe(true)
+    expect(fetch).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: 'first line\nsecond line' } })
+    expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(false)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    expect(fetch.mock.calls[0][1]?.body).toBe(
+      JSON.stringify({ question: 'first line\nsecond line', mode: 'fast' }),
+    )
+    expect(input).toHaveValue('')
+  })
 })

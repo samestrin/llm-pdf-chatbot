@@ -92,11 +92,40 @@ body {
   line-height: var(--leading);
 }
 
-main {
+.app {
   max-width: var(--page-max);
   margin: 0 auto;
   padding: var(--space-4);
   overflow-wrap: anywhere;
+}
+
+main {
+  min-width: 0;
+}
+
+/* The skip link is off screen until the keyboard reaches it. */
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: var(--space-2);
+  z-index: 20;
+  transform: translateY(-200%);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--weight-medium);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+/* Main takes focus from the skip link, so the next Tab lands in the chat. It is
+   not a control, so it shows no ring. */
+main:focus {
+  outline: none;
 }
 
 h1,
@@ -337,8 +366,9 @@ article {
   flex: 1 1 100%;
 }
 
-.chat-form .question-field input {
+.chat-form .question-field textarea {
   flex: 1 1 12rem;
+  resize: vertical;
 }
 
 .chat-form p {
@@ -409,6 +439,18 @@ progress {
 @media (prefers-reduced-motion: no-preference) {
   .spinner {
     animation: spin 0.8s linear infinite;
+  }
+}
+
+/* Whoever asks for less motion gets none: no animation, transition or smooth scroll. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

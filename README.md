@@ -192,6 +192,10 @@ Each claim in an answer has a citation chip (document, page). Clicking it opens 
 
 The page follows the system light or dark scheme (`prefers-color-scheme`). The "Dark theme" button overrides it; the choice is saved in `localStorage` (key `theme`) and kept on reload. The colours, type sizes, spacing, radii, shadows and focus ring all come from one set of design tokens in `frontend/src/theme.css`, and text passes WCAG AA contrast in both themes. The page fits 360 px phones to desktops without sideways scrolling: on a desktop the documents panel sits beside the chat; on a phone it stacks above it, the question box stays at the bottom of the screen and the PDF viewer fills the screen.
 
+## Keyboard and screen readers
+
+The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a header, a documents sidebar (`aside`) and the chat in `main`. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates. `frontend/e2e/a11y.spec.ts` runs axe over the empty, loaded-chat and viewer-open screens in both themes and fails on any serious or critical violation. It also runs a keyboard-only upload, ask, open and close.
+
 ## Verify the stack
 
 ```bash
