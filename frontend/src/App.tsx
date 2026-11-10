@@ -20,11 +20,15 @@ export default function App() {
 
   return (
     <main>
-      <ThemeToggle />
-      <h1>LLM PDF Chatbot</h1>
-      <p role="status">Backend: {health}</p>
-      <Chat collections={collections} />
-      <DocumentsPanel onCollections={onCollections} />
+      <div className="app-bar">
+        <h1>LLM PDF Chatbot</h1>
+        <p role="status">Backend: {health}</p>
+        <ThemeToggle />
+      </div>
+      <div className="app-layout">
+        <DocumentsPanel onCollections={onCollections} />
+        <Chat collections={collections} />
+      </div>
     </main>
   )
 }

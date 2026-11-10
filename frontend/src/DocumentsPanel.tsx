@@ -124,13 +124,13 @@ export default function DocumentsPanel({
   }
 
   return (
-    <section aria-labelledby="documents-heading">
+    <section aria-labelledby="documents-heading" className="panel documents-panel">
       <h2 id="documents-heading">Documents</h2>
-      <form onSubmit={onUpload}>
+      <form onSubmit={onUpload} className="upload-form">
         <label>
           Collection{' '}
           <input value={collection} onChange={(e) => setCollection(e.target.value)} />
-        </label>{' '}
+        </label>
         <label>
           PDF{' '}
           <input
@@ -138,7 +138,7 @@ export default function DocumentsPanel({
             accept="application/pdf"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
-        </label>{' '}
+        </label>
         <button type="submit" disabled={!file || !collection.trim() || progress !== null}>
           Upload
         </button>
@@ -155,7 +155,7 @@ export default function DocumentsPanel({
         <div key={c.id}>
           <h3>{c.name}</h3>
           {c.documents.length === 0 && <p>No documents.</p>}
-          <ul>
+          <ul className="document-list">
             {c.documents.map((doc) => (
               <li key={doc.id} aria-label={doc.filename}>
                 <strong>{doc.filename}</strong> ({doc.pages} pages){' '}

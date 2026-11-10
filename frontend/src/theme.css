@@ -1,42 +1,82 @@
+/*
+ * Design tokens: the one place a colour, size, radius or shadow is written down.
+ * Every rule below and in the other stylesheets uses these, never a literal.
+ *
+ * Each colour is `light-dark(light, dark)`. The page follows the system scheme
+ * (`color-scheme: light dark`) unless the theme toggle sets `data-theme`.
+ * Text colours pass WCAG AA (4.5:1) on the backgrounds they sit on in both
+ * themes; src/theme.test.ts checks every pair.
+ */
 :root {
-  color-scheme: light;
-  --bg: #f7f7f9;
-  --surface: #ffffff;
-  --text: #1c1d21;
-  --muted: #5c6068;
-  --border: #d5d7dd;
-  --accent: #2456d6;
-  --accent-text: #ffffff;
-  --warn: #a35a00;
-  --danger: #b3261e;
+  color-scheme: light dark;
+
+  /* Colour */
+  --color-bg: light-dark(#f4f5f7, #0f1115);
+  --color-surface: light-dark(#ffffff, #171a20);
+  --color-surface-sunken: light-dark(#eef0f3, #1f232b);
+  --color-text: light-dark(#15171c, #e6e8ec);
+  --color-muted: light-dark(#545a65, #a1a7b3);
+  --color-border: light-dark(#dcdfe5, #2c313a);
+  --color-border-strong: light-dark(#7c8390, #6f7785);
+  --color-accent: light-dark(#2451cc, #8ab0ff);
+  --color-accent-hover: light-dark(#1d42a8, #a8c4ff);
+  --color-accent-subtle: light-dark(#e9eefb, #1c2740);
+  --color-on-accent: light-dark(#ffffff, #0b1220);
+  --color-danger: light-dark(#b3261e, #ff8a80);
+  --color-warn: light-dark(#8a4a00, #f0a640);
+  --color-focus: light-dark(#2451cc, #8ab0ff);
+  --color-shadow: light-dark(rgb(16 24 40 / 0.08), rgb(0 0 0 / 0.45));
+  /* The quote highlight sits on the PDF page, which is white in both themes. */
+  --color-highlight-mark: rgb(255 200 0 / 0.45);
+  --color-highlight-box: rgb(255 200 0 / 0.35);
+  --color-highlight-outline: rgb(200 140 0);
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --leading-tight: 1.25;
+  --leading: 1.5;
+  --weight-medium: 500;
+  --weight-bold: 650;
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px var(--color-shadow), 0 1px 3px var(--color-shadow);
+  --shadow-2: 0 4px 12px var(--color-shadow), 0 2px 4px var(--color-shadow);
+
+  /* Focus ring */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring: var(--focus-ring-width) solid var(--color-focus);
+
+  /* Layout */
+  --page-max: 76rem;
+  --sidebar: 22rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    color-scheme: dark;
-    --bg: #121316;
-    --surface: #1c1e23;
-    --text: #e8e9ec;
-    --muted: #a0a4ad;
-    --border: #3a3d45;
-    --accent: #7aa2ff;
-    --accent-text: #10131a;
-    --warn: #f0a640;
-    --danger: #ff8a80;
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #121316;
-  --surface: #1c1e23;
-  --text: #e8e9ec;
-  --muted: #a0a4ad;
-  --border: #3a3d45;
-  --accent: #7aa2ff;
-  --accent-text: #10131a;
-  --warn: #f0a640;
-  --danger: #ff8a80;
 }
 
 * {
@@ -45,28 +85,52 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading);
 }
 
 main {
-  max-width: 52rem;
+  max-width: var(--page-max);
   margin: 0 auto;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow-wrap: anywhere;
 }
 
-h1 {
-  font-size: 1.5rem;
-  margin: 0 0 0.5rem;
-}
-
+h1,
 h2,
 h3 {
-  font-size: 1.1rem;
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-bold);
 }
+
+h1 {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+h2 {
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-3);
+}
+
+h3 {
+  font-size: var(--text-base);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+p {
+  margin: var(--space-2) 0;
+}
+
+ul,
+ol {
+  padding-left: var(--space-5);
+}
+
+/* Controls */
 
 button,
 input,
@@ -74,18 +138,32 @@ select,
 textarea {
   font: inherit;
   color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.4rem 0.7rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
   max-width: 100%;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--color-accent);
+}
+
+input[type='file'] {
+  border-style: dashed;
 }
 
 button {
   cursor: pointer;
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 button:disabled {
@@ -94,57 +172,218 @@ button:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
+label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+/* Page layout: a header bar, then the documents panel and the chat. On a
+   desktop the documents panel is a sidebar; below that the two stack. */
+
+.app-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.app-bar [role='status'] {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .app-layout {
+    grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  }
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+/* Theme toggle */
+
 .theme-toggle {
-  float: right;
-  background: var(--surface);
-  color: var(--text);
-  border-color: var(--border);
+  margin-left: auto;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.theme-toggle:hover:not(:disabled) {
+  background: var(--color-surface-sunken);
+  border-color: var(--color-border-strong);
 }
 
 .theme-toggle[aria-pressed='true'] {
-  border-color: var(--accent);
+  border-color: var(--color-accent);
+}
+
+/* Documents panel */
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.upload-form label {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.upload-form button {
+  align-self: flex-start;
+}
+
+.document-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.document-list > li {
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.document-list button {
+  background: transparent;
+  color: var(--color-danger);
+  border-color: transparent;
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.document-list button:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--color-danger);
+}
+
+.document-list p {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  margin: var(--space-1) 0 0;
+}
+
+/* Chat */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-turn {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 article {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
-  margin: 0.75rem 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+}
+
+.chat-turn > .question {
+  justify-self: end;
+  max-width: 85%;
+  background: var(--color-accent-subtle);
+  border-color: transparent;
+}
+
+/* The question box stays at the bottom of the screen while the answers scroll. */
+.chat-form {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.chat-form .question-field {
+  flex: 1 1 100%;
+}
+
+.chat-form .question-field input {
+  flex: 1 1 12rem;
+}
+
+.chat-form p {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 blockquote {
-  margin: 0.25rem 0;
-  padding-left: 0.75rem;
-  border-left: 3px solid var(--border);
-  color: var(--muted);
+  margin: var(--space-1) 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted);
 }
 
 [role='alert'] {
-  color: var(--danger);
+  color: var(--color-danger);
 }
 
 .citation-chip button {
-  background: transparent;
-  color: var(--accent);
-  border-radius: 999px;
-  padding: 0 0.5rem;
-  font-size: 0.85em;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border-color: transparent;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.citation-chip button:hover:not(:disabled) {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
 }
 
 .answer-meta,
 .step-pages,
 .deep-note {
-  color: var(--muted);
-  font-size: 0.85em;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
 }
 
 img,
 canvas,
 progress {
   max-width: 100%;
+}
+
+progress {
+  accent-color: var(--color-accent);
 }

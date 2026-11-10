@@ -201,11 +201,11 @@ export default function Chat({ collections }: { collections: string[] }) {
   }
 
   return (
-    <section aria-labelledby="chat-heading">
+    <section aria-labelledby="chat-heading" className="panel chat">
       <h2 id="chat-heading">Chat</h2>
       {turns.map((turn, i) => (
-        <div key={i}>
-          <article aria-label="Question">{turn.question}</article>
+        <div key={i} className="chat-turn">
+          <article aria-label="Question" className="question">{turn.question}</article>
           <Answer turn={turn} onOpen={setOpened} />
         </div>
       ))}
@@ -218,7 +218,7 @@ export default function Chat({ collections }: { collections: string[] }) {
           />
         </Suspense>
       )}
-      <form onSubmit={onAsk}>
+      <form onSubmit={onAsk} className="chat-form">
         <label>
           Ask in collection{' '}
           <select value={collection} onChange={(e) => setChosen(e.target.value)}>
@@ -229,7 +229,7 @@ export default function Chat({ collections }: { collections: string[] }) {
             ))}
           </select>
         </label>{' '}
-        <label>
+        <label className="question-field">
           Ask a question{' '}
           <input value={question} onChange={(e) => setQuestion(e.target.value)} />
         </label>{' '}

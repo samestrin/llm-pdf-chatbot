@@ -158,7 +158,7 @@ Each claim in an answer has a citation chip (document, page). Clicking it opens 
 
 ## Themes
 
-The page follows the system light or dark scheme (`prefers-color-scheme`). The "Dark theme" button overrides it; the choice is saved in `localStorage` (key `theme`) and kept on reload. The layout fits a 375 px phone width without sideways scrolling.
+The page follows the system light or dark scheme (`prefers-color-scheme`). The "Dark theme" button overrides it; the choice is saved in `localStorage` (key `theme`) and kept on reload. The colours, type sizes, spacing, radii, shadows and focus ring all come from one set of design tokens in `frontend/src/theme.css`, and text passes WCAG AA contrast in both themes. The page fits 360 px phones to desktops without sideways scrolling: on a desktop the documents panel sits beside the chat; on a phone it stacks above it, the question box stays at the bottom of the screen and the PDF viewer fills the screen.
 
 ## Verify the stack
 
