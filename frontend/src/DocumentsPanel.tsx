@@ -84,6 +84,8 @@ function CollectionPicker({
   )
 }
 
+const pages = (n: number) => `${n} ${n === 1 ? 'page' : 'pages'}`
+
 function StatusLine({ doc }: { doc: DocumentInfo }) {
   const s = doc.status
   if (s.state === 'failed') return <p role="alert">Failed: {s.error ?? 'unknown reason'}</p>
@@ -91,7 +93,7 @@ function StatusLine({ doc }: { doc: DocumentInfo }) {
     return (
       <div>
         <p>
-          {s.state === 'queued' ? 'Queued' : 'Reading'}: {s.pages_read} of {s.pages_total} pages{' '}
+          {s.state === 'queued' ? 'Queued' : 'Reading'}: {s.pages_read} of {pages(s.pages_total)}{' '}
           <progress
             aria-label={`Ingestion of ${doc.filename}`}
             max={s.pages_total || 1}
@@ -106,7 +108,7 @@ function StatusLine({ doc }: { doc: DocumentInfo }) {
     return (
       <div>
         <p>
-          Partly read: {s.pages_read} of {s.pages_total} pages, {s.pages_failed} failed
+          Partly read: {s.pages_read} of {pages(s.pages_total)}, {s.pages_failed} failed
         </p>
         <ul aria-label={`Failed pages of ${doc.filename}`}>
           {s.failures.map((f) => (
@@ -119,7 +121,7 @@ function StatusLine({ doc }: { doc: DocumentInfo }) {
       </div>
     )
   }
-  return <p>Ready: {s.pages_total} pages</p>
+  return <p>Ready: {pages(s.pages_total)}</p>
 }
 
 export default function DocumentsPanel({

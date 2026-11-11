@@ -13,6 +13,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 - The frontend's nginx forwards `/api` to `llm-pdf-chatbot-backend` instead of `backend`, a name no other app shares on a common Docker network; `docker-compose.yml` gives the backend that alias. A compose file of your own that runs the frontend image must give its backend that name.
 
+### Fixed
+
+- The answer's lead line reads `Found in lease.pdf, p. 2` with the comma flush against the name, and a one-page document reads `Ready: 1 page` (also in the reading and partly-read lines), not `1 pages`.
+
 ## [1.0.0] - 2026-11-06
 
 The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector, replacing the Create React App prototype.

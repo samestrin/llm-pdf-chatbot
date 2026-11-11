@@ -72,6 +72,18 @@ test('streams an answer claim by claim, each with its citation chip', async ({
   // One document so far: a short chip, and the name once, in the lead line.
   await expect(claims.nth(0).getByRole('note', { name: 'Citation' })).toHaveText('p. 3')
   await expect(answer.locator('.answer-lead')).toHaveText('Found in lease.pdf, p. 3')
+  // The comma sits flush against the file name, in the laid-out line and in the rendered text.
+  const lead = answer.locator('.answer-lead')
+  const gap = await lead.evaluate((el) => {
+    const name = el.querySelector('.filename')!.getBoundingClientRect()
+    const comma = el.lastElementChild!.firstChild!
+    const range = document.createRange()
+    range.setStart(comma, 0)
+    range.setEnd(comma, 1)
+    return range.getBoundingClientRect().left - name.right
+  })
+  expect(Math.abs(gap)).toBeLessThan(1)
+  expect(await lead.evaluate((el) => (el as HTMLElement).innerText)).toBe('Found in lease.pdf, p. 3')
   await expect(answer).toHaveAttribute('aria-busy', 'true')
   expect(sent).toEqual({ question, mode: 'fast' })
 

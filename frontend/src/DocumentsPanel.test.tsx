@@ -185,6 +185,38 @@ describe('DocumentsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Retry upload' })).toBeNull()
   })
 
+  it('says one page, not 1 pages, for one-page documents', async () => {
+    const one = (id: string, filename: string, state: string, read: number, failed: number) => ({
+      ...busyDoc,
+      id,
+      filename,
+      pages: 1,
+      status: { ...busyDoc.status, state, pages_total: 1, pages_read: read, pages_failed: failed },
+    })
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        Response.json([
+          {
+            id: 1,
+            name: 'c',
+            documents: [
+              one('x', 'a.pdf', 'ready', 1, 0),
+              one('y', 'b.pdf', 'processing', 0, 0),
+              one('z', 'c.pdf', 'ready', 0, 1),
+            ],
+          },
+        ]),
+      ),
+    )
+    render(<Panel />)
+
+    expect(await screen.findByRole('listitem', { name: 'a.pdf' })).toHaveTextContent('Ready: 1 page')
+    expect(screen.getByRole('listitem', { name: 'a.pdf' }).textContent).not.toMatch(/1 pages/)
+    expect(screen.getByRole('listitem', { name: 'b.pdf' })).toHaveTextContent('Reading: 0 of 1 page')
+    expect(screen.getByRole('listitem', { name: 'b.pdf' }).textContent).not.toMatch(/1 pages/)
+    expect(screen.getByRole('listitem', { name: 'c.pdf' }).textContent).not.toMatch(/1 pages/)
+  })
+
   it('says a document that is still being read cannot be asked about yet', async () => {
     vi.stubGlobal('fetch', () =>
       Promise.resolve(Response.json([{ id: 1, name: 'c', documents: [busyDoc, readyDoc] }])),

@@ -587,22 +587,29 @@ blockquote {
 }
 
 /* The lead line, the sources and "Asking in": the file name shrinks, the rest stays whole. */
-.answer-lead,
 .answer-sources,
 .asking-in {
   display: flex;
   min-width: 0;
 }
 
-.answer-lead > span:not(.filename),
 p.answer-sources > span:not(.filename),
 .asking-in > span:not(.filename) {
   flex: none;
   white-space: pre;
 }
 
+/* Inline flow, not flex: flex items are blockified, so the name and the comma would read as
+   separate lines. The name is an inline-block so a long one still truncates with an ellipsis. */
 .answer-lead {
+  min-width: 0;
   font-weight: var(--weight-medium);
+}
+
+.answer-lead .filename {
+  display: inline-block;
+  max-width: calc(100% - 12ch);
+  vertical-align: bottom;
 }
 
 ol.answer-sources {
