@@ -456,6 +456,13 @@ label {
   border-color: var(--color-danger);
 }
 
+.document-list .delete-button:disabled {
+  background: var(--color-disabled);
+  color: var(--color-on-disabled);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
 .document-list p {
   font-size: var(--text-sm);
   color: var(--color-muted);

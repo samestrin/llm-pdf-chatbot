@@ -11,6 +11,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Changed
 
+- A disabled Delete button in the documents list now gets the same neutral disabled surface as the other buttons instead of staying transparent.
 - The frontend's nginx forwards `/api` to `llm-pdf-chatbot-backend` instead of `backend`, a name no other app shares on a common Docker network; `docker-compose.yml` gives the backend that alias. A compose file of your own that runs the frontend image must give its backend that name.
 
 ## [1.0.0] - 2026-11-06
