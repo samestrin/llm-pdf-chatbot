@@ -15,7 +15,7 @@ Open <http://localhost:8080> (`FRONTEND_PORT`) once the stack is up.
 - Before any document is uploaded, both the panel and the chat say what to do first: upload a PDF, then ask about it.
 - A document still queued or being read shows its progress and a note that it can be asked about once it is ready, and the chat names the documents of the active collection that answers still leave out.
 - A failed load or upload shows the reason with a Retry button; Retry upload sends the same file to the same collection again.
-- The header says nothing about the backend while it is up; when the health check fails it says "Backend is down" with a Retry button.
+- The header says nothing about the backend while it is up; when the health check fails it says "Backend is down".
 
 ## Asking
 

@@ -53,20 +53,11 @@ describe('App', () => {
     expect(await screen.findByText('Backend is down')).toBeInTheDocument()
   })
 
-  it('shows the backend as down when the request fails, and checks again on Retry', async () => {
-    let up = false
-    stubFetch(() =>
-      up
-        ? Promise.resolve(Response.json({ status: 'ok' }))
-        : Promise.reject(new TypeError('Failed to fetch')),
-    )
+  it('shows the backend as down when the request fails, with no Retry button', async () => {
+    stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
     render(<App />)
     const banner = screen.getByRole('banner')
-    expect(await within(banner).findByText('Backend is down')).toBeInTheDocument()
-
-    up = true
-    fireEvent.click(within(banner).getByRole('button', { name: 'Retry' }))
-    await vi.waitFor(() => expect(within(banner).queryByText('Backend is down')).toBeNull())
+    expect(await within(banner).findByRole('status')).toHaveTextContent('Backend is down')
     expect(within(banner).queryByRole('button', { name: 'Retry' })).toBeNull()
   })
 

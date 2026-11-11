@@ -21,15 +21,11 @@ export default function App() {
     [onLoaded],
   )
 
-  const checkHealth = useCallback((signal?: AbortSignal) => {
-    getHealth(signal).then(setHealth, () => {})
-  }, [])
-
   useEffect(() => {
     const controller = new AbortController()
-    checkHealth(controller.signal)
+    getHealth(controller.signal).then(setHealth, () => {})
     return () => controller.abort()
-  }, [checkHealth])
+  }, [])
 
   const ingesting = Object.fromEntries(
     (collections ?? []).map((c) => [
@@ -52,18 +48,6 @@ export default function App() {
         {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
         <div className="backend-status">
           <p role="status">{down ? 'Backend is down' : ''}</p>
-          {down && (
-            <button
-              type="button"
-              className="secondary small"
-              onClick={() => {
-                setHealth('checking')
-                checkHealth()
-              }}
-            >
-              Retry
-            </button>
-          )}
         </div>
         <ThemeToggle />
       </header>

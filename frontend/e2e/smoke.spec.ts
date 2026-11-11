@@ -17,15 +17,13 @@ test('loads the app and checks the backend health at same-origin /api', async ({
   expect(new Set(api.calls)).toEqual(new Set(['GET /api/health', 'GET /api/collections']))
 })
 
-test('shows the backend as down when /api/health fails, with a Retry', async ({ page, api }) => {
+test('shows the backend as down when /api/health fails, with no Retry', async ({ page, api }) => {
   api.on('GET', '/api/health', json({ detail: 'database unavailable' }, 503))
   await page.goto('/')
 
   const banner = page.getByRole('banner')
   await expect(banner.getByRole('status')).toHaveText('Backend is down')
-  api.on('GET', '/api/health', json({ status: 'ok' }))
-  await banner.getByRole('button', { name: 'Retry' }).click()
-  await expect(banner).not.toContainText('Backend')
+  await expect(banner.getByRole('button', { name: 'Retry' })).toHaveCount(0)
 })
 
 test('serves the committed fixture PDF through a route fixture', async ({ page, api }) => {
