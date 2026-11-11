@@ -11,7 +11,6 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Changed
 
-- A disabled Delete button in the documents list now gets the same neutral disabled surface as the other buttons instead of staying transparent.
 - The frontend's nginx forwards `/api` to `llm-pdf-chatbot-backend` instead of `backend`, a name no other app shares on a common Docker network; `docker-compose.yml` gives the backend that alias. A compose file of your own that runs the frontend image must give its backend that name.
 
 ## [1.0.0] - 2026-11-06
@@ -33,6 +32,7 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 - First-run empty states in the documents panel and the chat that say what to do next; a spinner while the documents load and while a cited page opens; a Retry button on a failed document load, upload, answer and PDF viewer open (an answer is asked again in the collection and mode it was first asked in); and a note on each document still being read, and in the chat for the chosen collection, that answers leave it out until it is ready.
 - A "Try a sample PDF" button in the empty documents panel: one click uploads a small sample PDF, written for this repo and served by the frontend, into the selected collection.
 - Keyboard and screen-reader support: a "Skip to chat" link; header, documents sidebar and main landmarks; streamed answers read out as they arrive; Enter asks and Shift+Enter starts a new line; the PDF viewer keeps focus inside it, closes on Escape and returns focus to the citation chip; and nothing animates when reduced motion is asked for.
+- A logo mark in the header, and a "Thinking" indicator with bouncing dots shown while an answer has not started yet.
 - A "Try it" section in the README, and refreshed screenshots including a dark-mode and a phone-width image.
 - An evaluation: 40 questions (10 unanswerable) over 5 freely licensed PDFs, scored for accuracy, citation precision, refusal accuracy and cost.
 - A release workflow: a `v*` tag builds the backend and frontend images and, once the tagged commit's checks are green, creates a GitHub release with the version's CHANGELOG.md section as its notes; the images are pushed to the GitHub Container Registry only when the repository variable `PUBLISH_IMAGES` is `true` (unset by default).
@@ -47,8 +47,8 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 - Long file names stay on one line with an ellipsis and the whole name in a tooltip; Delete is a small button that asks first, and each document shows its page count once.
 - A scanned PDF with no text layer, read with OCR off, fails with "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)" instead of "no page could be read".
 - Citation chips show the page only (`p. 3`); the document is named once per answer, or listed as numbered sources (`2 · p. 1`) when an answer cites several. A line built from the claims ("Found in lease.pdf, pp. 1–3") opens each answer that has claims.
-- The header mentions the backend only when it is down, with a Retry button, and an answer shows its cost only when it is known.
-- Buttons have a solid primary colour in both themes and a distinct grey disabled style, instead of a faded one.
+- The header mentions the backend only when it is down, and an answer shows its cost only when it is known.
+- Buttons have a solid primary colour in both themes and a distinct grey disabled style, instead of a faded one; the small Delete button in the documents list gets the same disabled surface instead of staying transparent.
 
 [Unreleased]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/samestrin/llm-pdf-chatbot/releases/tag/v1.0.0
