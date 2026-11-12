@@ -8,6 +8,12 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 - The README demo GIF is a real session, recorded by `npm run capture:live` against a running instance (LIVE_URL) with real models: eight positive-reinforcement dog-training guides, a fast answer, a deep answer with its plan, and a refused question. The capture stops if a claim recommends an aversive training method or if the frames differ in size; the PDFs are not in the repo.
 
+## [1.0.1] - 2026-11-12
+
+### Changed
+
+- The release version is 1.0.1 in the backend (`pyproject.toml`, `uv.lock`) and the frontend (`package.json`, `package-lock.json`), so the version the OpenAPI spec shows is the version released.
+
 ## [1.0.0] - 2026-11-11
 
 The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector, replacing the Create React App prototype.
