@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 WORKFLOW = yaml.safe_load((REPO / ".github/workflows/release.yml").read_text())
 JOBS = WORKFLOW["jobs"]
 # PyYAML reads the bare key `on` as the boolean True.
@@ -25,7 +25,7 @@ def steps_text(job):
     return "\n".join(s.get("run", "") for s in JOBS[job]["steps"])
 
 
-def test_backend_version_is_1_0_0_in_pyproject_and_lock():
+def test_backend_version_is_1_0_1_in_pyproject_and_lock():
     pyproject = tomllib.loads((REPO / "backend/pyproject.toml").read_text())
     assert pyproject["project"]["version"] == VERSION
     lock = tomllib.loads((REPO / "backend/uv.lock").read_text())
@@ -33,7 +33,7 @@ def test_backend_version_is_1_0_0_in_pyproject_and_lock():
     assert own["version"] == VERSION
 
 
-def test_frontend_version_is_1_0_0_in_package_and_lock():
+def test_frontend_version_is_1_0_1_in_package_and_lock():
     package = json.loads((REPO / "frontend/package.json").read_text())
     lock = json.loads((REPO / "frontend/package-lock.json").read_text())
     assert package["version"] == VERSION
@@ -41,8 +41,10 @@ def test_frontend_version_is_1_0_0_in_package_and_lock():
     assert lock["packages"][""]["version"] == VERSION
 
 
-def test_changelog_has_a_dated_1_0_0_entry():
+def test_changelog_has_a_dated_1_0_1_entry():
     changelog = (REPO / "CHANGELOG.md").read_text()
+    assert re.search(r"^## \[1\.0\.1\] - \d{4}-\d{2}-\d{2}$", changelog, re.MULTILINE)
+    # The 1.0.0 release happened: its dated section stays in the changelog.
     assert re.search(r"^## \[1\.0\.0\] - \d{4}-\d{2}-\d{2}$", changelog, re.MULTILINE)
 
 
@@ -214,7 +216,7 @@ SAMPLE_CHANGELOG = """# Changelog
 
 - Next thing.
 
-## [1.0.0] - 2026-11-06
+## [1.0.1] - 2026-11-06
 
 Intro.
 
