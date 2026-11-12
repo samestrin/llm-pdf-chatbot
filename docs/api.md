@@ -1,59 +1,38 @@
 # HTTP API
 
-The backend is a FastAPI app on port 8000 (`BACKEND_PORT`). Its interactive docs are at <http://localhost:8000/docs>. The browser reaches the backend only at same-origin `/api/...`: the frontend's nginx strips `/api` and forwards to the backend, so no CORS is needed. `http://localhost:8080/api/health` is the same as `http://localhost:8000/health`.
+The backend is a FastAPI app on port 8000 (`BACKEND_PORT`). Its interactive reference is at [`/api/docs`](/api/docs). The browser reaches the backend only at same-origin `/api/...`: the frontend's nginx strips `/api` and forwards to the backend, so no CORS is needed.
 
-There is no auth: the app is local and single-user.
+The app serves the OpenAPI spec at `/api/openapi.json`; the same spec is committed as [`docs/openapi.json`](openapi.json). After changing an endpoint, regenerate it with `cd backend && uv run python ../scripts/export_openapi.py`; a backend test fails when the committed file is stale.
 
-The spec the app serves at `/openapi.json` is also committed at [`openapi.json`](openapi.json) in this folder. After changing an endpoint, regenerate it with `cd backend && uv run python ../scripts/export_openapi.py`; a backend test fails when the committed file is stale.
+## Behaviour the spec does not carry
 
-## Endpoints
+### Ingestion and stored files
 
-| Method and path | What it does | Status codes |
-| --- | --- | --- |
-| `GET /health` | Checks the database: `{"status":"ok"}`. | 200; 503 `database unavailable` |
-| `POST /collections/{name}/documents` | Uploads a PDF (multipart field `file`) into the collection, creating it if it is new, and queues it for ingestion. Returns the document's `id`, `collection`, `filename`, `pages`, `size_bytes` and `status` (`queued`). | 201; 413 over the size limit; 422 not a PDF, unreadable, no pages, or over the page limit |
-| `GET /collections` | Lists every collection with its documents, each with the same status fields as the status endpoint under `status`. | 200 |
-| `DELETE /collections/{name}` | Deletes an empty collection, such as one left from before empty collections were removed. | 204 when it was empty; 404 unknown name; 409 `collection is not empty` (nothing is deleted) |
-| `GET /documents/{id}/status` | A document's ingestion state and progress. | 200; 404 |
-| `GET /documents/{id}/pdf` | The stored PDF, inline. | 200; 404 |
-| `GET /documents/{id}/pages/{page}` | One page's stored text (pages count from 1). | 200; 404 unknown document or page outside it; 409 page not read yet |
-| `DELETE /documents/{id}` | Deletes a document, its file and everything derived from it. | 204; 404 |
-| `POST /collections/{name}/chat` | Answers a question from the collection, streamed as NDJSON. | 200 (failures arrive as an `error` event in the stream); 422 invalid body |
+- Document status reports chunk progress in `chunks_total` and `chunks_embedded`, updated after the pages are read and after every embedding batch. A document can be `ready` with failed pages; each failure has its page, reason and OCR error under `failures`.
+- If no page could be read, the document is `failed`. When OCR is off (`OCR_URL` unset) and no page has a text layer, the exact reason is `This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)`; otherwise it is `no page could be read`.
+- The client's file name never touches the file system. It is kept for display only; the stored PDF uses the server-generated document id.
 
-## Reading documents back
+### Chat requests and history
 
-- `GET /collections` lists every collection with its documents, each with the same status fields under `status`.
-- `DELETE /documents/{id}` deletes a document, its file and everything derived from it. When it was the last document of its collection, the collection is removed too, so the list never keeps an empty collection behind.
-- `DELETE /collections/{name}` deletes an empty collection: 204 when it was empty, 404 for an unknown name, and 409 `collection is not empty` when it still has documents (nothing is deleted then).
-- `GET /documents/{id}/pdf` serves the stored PDF inline (`application/pdf`, `X-Content-Type-Options: nosniff`). Only an id the server generated at upload works; any other id returns 404, and the client's file name is never used as a path.
-- `GET /documents/{id}/pages/{page}` returns a page's stored text, which is the exact text that citation offsets index into, with the method that read it. A page no method could read has `text` null and the reason in `error`.
+- `history` is the conversation so far, oldest first, and the client keeps and sends it. An answer may be empty for a refused or failed turn. Only the last `CHAT_HISTORY_TURNS` turns (default 6) go to the model. History helps the model understand a follow-up question, but citations are checked against the retrieved passages only.
+- A whitespace-only question is rejected with 422. An invalid `mode` is also rejected with 422, before any model call.
 
-## Document status
+### NDJSON chat stream
 
-`GET /documents/{id}/status` reports a document's state (`queued`, `processing`, `ready`, or `failed` with the reason) and progress (pages read, chunks embedded), each page with the method that read it (`text_layer`, or `tesseract` from OCR, or `pymupdf` from the text-layer fallback) and why OCR failed on it, and under `failures` every page no method could read, with the reason. A document can be `ready` with some pages failed.
+OpenAPI cannot express the sequence of JSON objects streamed by `POST /api/collections/{collection}/chat`. The response is `application/x-ndjson`, one event per line. These are all the event types in `frontend/src/api.ts`'s `ChatEvent`, with one example line each:
 
-A document no page of which could be read fails. When OCR is off (`OCR_URL` unset) and no page has a text layer, the reason is `This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)`; otherwise it is `no page could be read`, with each page's reason and OCR error under `failures`.
-
-## Chat
-
-```bash
-curl -N http://localhost:8000/collections/default/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"question": "What is the notice period?", "mode": "fast", "history": [{"question": "...", "answer": "..."}]}'
+```ndjson
+{"type":"step","question":"What is the notice period?","pages":[{"document":{"id":"doc-1","filename":"lease.pdf"},"page":3}]}
+{"type":"claim","text":"The notice period is 30 days.","document":{"id":"doc-1","filename":"lease.pdf"},"page":3,"chunk_id":"42","quote":"The notice period is 30 days."}
+{"type":"refusal","passages":[{"document":{"id":"doc-1","filename":"lease.pdf"},"page":3,"chunk_id":"42","text":"The notice period is 30 days."}]}
+{"type":"error","message":"the answer failed: the model endpoint is unreachable (check LLM_BASE_URL)"}
+{"type":"done","mode":"fast","model":"llama3.2","cost":null}
 ```
 
-- `question` is required and must not be blank.
-- `mode` is `fast` (the default) or `deep` (see [Deep mode](how-it-works.md#deep-mode)); any other value is turned down with 422 before the model is asked.
-- `history` is optional: the conversation so far, oldest first, which the client keeps (an `answer` may be empty for a refused or failed turn). Only its last `CHAT_HISTORY_TURNS` turns (default 6) go to the model, as earlier messages before the passages and the question; they help the model read a follow-up question, and claims are still checked against the retrieved passages only.
-
-The answer streams as NDJSON (`application/x-ndjson`), one event per line, each with a `type`. A `document` is `{"id", "filename"}`.
-
-| Event | Fields | When |
-| --- | --- | --- |
-| `step` | `question`, `pages` (each a `document` and a `page`, once each) | Deep mode only: one per sub-question, before any claim. |
-| `claim` | `text`, `document`, `page`, `chunk_id`, `quote` | One per claim that passed the citation check. The `quote` is the exact page text the quote matched. |
-| `refusal` | `passages`: the closest passages, each with `document`, `page`, `chunk_id` and `text` | The question is off topic, or no claim survived the check. |
-| `done` | `mode`, `model`, `cost` | The answer finished. `cost` is in the price's currency, or `null` when no prices are set, the endpoint reported no token usage, or the model was not asked (never 0 as a stand-in). |
-| `error` | `message`, such as `the answer failed: the model endpoint is unreachable (check LLM_BASE_URL)` | A failure, also after some claims were sent, so a partial answer is never marked done. |
+- `step` is deep mode only: one per sub-question, before any claim, with each retrieved page once.
+- `claim` is one claim that passed the citation check; `quote` is the exact matching page text.
+- `refusal` returns the closest passages when the question is off topic or no claim survives the citation check.
+- `error` reports a failure, including after claims were sent, so a partial answer is never marked done.
+- `done` ends a completed answer. `cost` is `null` when it is unknown, never `0` as a stand-in.
 
 How the backend decides between an answer and a refusal, and how each claim is checked, is in [How it works](how-it-works.md#answers).
