@@ -9,7 +9,7 @@ const backendPort = Number(process.env.E2E_BACKEND_PORT ?? 5198)
 
 export default defineConfig({
   testDir: 'e2e',
-  testIgnore: 'capture/**',
+  testIgnore: ['capture/**', 'live/**'],
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
