@@ -4,6 +4,12 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The API reference at `/api/docs` calls the API at `/api/...`: the spec served through the frontend names `/api` as its server (nginx and Vite's dev proxy send `X-Forwarded-Prefix: /api`), so "Test Request" and the code samples no longer reach the web page at the site root. Served directly on port 8000 the spec names no server, as before, and `docs/openapi.json` and the spec's paths are unchanged.
+- The API reference no longer scrolls sideways on a 375 px screen: a long request-body schema name wraps and code samples scroll inside their own box.
+- The API reference's links, buttons and active sidebar item are the chatbot's blue in light and dark, instead of Scalar's default black and grey.
+
 ## [1.0.1] - 2026-11-12
 
 ### Added

@@ -16,6 +16,8 @@ export default defineConfig(({ mode }) => {
           target: API_PROXY_TARGET,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ''),
+          // As nginx does: the spec then names /api as its server for /api/docs.
+          headers: { 'X-Forwarded-Prefix': '/api' },
         },
       },
     },

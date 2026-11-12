@@ -7,15 +7,51 @@
     <!-- frontend/public/favicon.svg, inlined so the page asks for no icon file.
          tests/test_docs.py compares it byte for byte with that file. -->
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ijc1MiA1NTMgNTQ1IDU1OSI+PHN0eWxlPi5we2ZpbGw6IzI0NTFDQ30uZntmaWxsOiMxNTE3MUN9QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyayl7LnB7ZmlsbDojOEFCMEZGfS5me2ZpbGw6I0U2RThFQ319PC9zdHlsZT48cGF0aCBjbGFzcz0icCIgZD0iTSA4MTYuMDAwIDc1MS41MDAgUSA4MTUuNTg1IDc1My4yMTAgODE1LjU5MCA3NjMuODc1IEwgODE1LjYwNyA5MDcuMTI1IFEgODE1LjUzNyA5NDYuMjk0IDgzOS44NTEgOTc1LjAwNiBRIDg3MS41MDggMTAxMi4zODcgOTIyLjYyNSAxMDEyLjQ3MCBRIDEwNzUuODE2IDEwMTIuNzE2IDExMzcuODc1IDEwMTIuMDY1IFEgMTE1Mi4wOTQgMTAxMS45MTYgMTE1NC4zMjUgMTAxMy41MzIgUSAxMTk5LjE1MyAxMDQ1Ljk4OCAxMjA0LjM4NCAxMDQ2LjUxNCBRIDEyMjAuNjM3IDEwNDguMTUwIDEyMjAuNTM2IDEwMjYuMTI1IEwgMTIyMC4yODMgOTQxLjM3NSBRIDEyMjAuMjcyIDkzNy42OTUgMTIyNi43NTcgOTIwLjg4MiBRIDEyMzIuMTA4IDkwNy4wMDkgMTIzMi4wMTggODgxLjEyNSBMIDEyMzEuODg3IDcyNi4xMjUgQyAxMjMxLjc3NyA2NjkuODQ0IDExODYuMTA2IDYxOC45NzIgMTEyOS4xMjYgNjE4LjkxNSBMIDEwMDUuMzc1IDYxOC43OTEgUSA5NzMuMTAxIDYxOC43NTkgOTcxLjc1MCA2MTkuMDAwIFEgOTcyLjEyNCA2MjUuMzQxIDk3Mi4yMTkgNzEwLjg3NSBDIDk3Mi4yNDQgNzM0LjEzOSA5NTQuNzA3IDc1MS4xMjEgOTMxLjM3NyA3NTEuMTg0IEwgODE2LjAwMCA3NTEuNTAwIFoiLz48cGF0aCBjbGFzcz0iZiIgZD0iTSA4MTYuMDAwIDc1MS41MDAgTCA5MzEuMzc3IDc1MS4xODQgQyA5NTQuNzA3IDc1MS4xMjEgOTcyLjI0NCA3MzQuMTM5IDk3Mi4yMTkgNzEwLjg3NSBRIDk3Mi4xMjQgNjI1LjM0MSA5NzEuNzUwIDYxOS4wMDAgUSA5NDEuNzMxIDYxNi43ODEgOTE4LjQ3MSA2MzguMDkxIEMgODkwLjYxMiA2NjMuNjE1IDg2My41NTMgNjg5LjgzOCA4MzYuMDIyIDcxNS42NzUgUSA4MTguNDU3IDczMi4xNTkgODE2LjAwMCA3NTEuNTAwIFoiLz48L3N2Zz4K" />
-    <!-- The accent is --color-accent from frontend/src/theme.css, light and dark.
-         Scalar's own theme variables sit in @layer scalar-theme, so these unlayered
-         rules win. tests/test_docs.py checks both colours against theme.css. -->
+    <!-- The accent is the chatbot's, from frontend/src/theme.css, light and dark:
+         --color-accent, -accent-hover, -accent-subtle and --color-on-accent. Scalar
+         draws links, buttons and the active sidebar item from their own variables, not
+         --scalar-color-accent, so each is set here. Scalar's own theme variables sit in
+         @layer scalar-theme, so these unlayered rules win. tests/test_docs.py checks
+         every colour against theme.css. -->
     <style>
       .light-mode {
         --scalar-color-accent: #2451cc;
+        --scalar-background-accent: #e9eefb;
+        --scalar-link-color: #2451cc;
+        --scalar-link-color-hover: #1d42a8;
+        --scalar-link-color-visited: #2451cc;
+        --scalar-button-1: #2451cc;
+        --scalar-button-1-hover: #1d42a8;
+        --scalar-button-1-color: #ffffff;
+        --scalar-sidebar-color-active: #2451cc;
+        --scalar-sidebar-item-active-background: #e9eefb;
+        --scalar-sidebar-indent-border-active: #2451cc;
       }
       .dark-mode {
         --scalar-color-accent: #8ab0ff;
+        --scalar-background-accent: #1c2740;
+        --scalar-link-color: #8ab0ff;
+        --scalar-link-color-hover: #a8c4ff;
+        --scalar-link-color-visited: #8ab0ff;
+        --scalar-button-1: #8ab0ff;
+        --scalar-button-1-hover: #a8c4ff;
+        --scalar-button-1-color: #0b1220;
+        --scalar-sidebar-color-active: #8ab0ff;
+        --scalar-sidebar-item-active-background: #1c2740;
+        --scalar-sidebar-indent-border-active: #8ab0ff;
+      }
+      /* At 375 px wide content scrolls or wraps inside its own block, never the page:
+         code samples scroll sideways in their box, and the request body's schema name
+         (one long word, such as Body_upload_document_collections__collection__documents_post)
+         breaks onto the next line. */
+      .scalar-app pre {
+        max-width: 100%;
+        overflow-x: auto;
+      }
+      .scalar-app .request-body-title {
+        flex-wrap: wrap;
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
     </style>
   </head>

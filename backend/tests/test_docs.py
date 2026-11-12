@@ -159,6 +159,7 @@ def configuration(html: str) -> dict:
 
 
 def css_rules(css: str) -> list[tuple[str, str]]:
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)  # a comment is not part of a selector
     return [(s.strip(), b.strip()) for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", css)]
 
 
