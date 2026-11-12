@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from starlette.routing import Match
 
 from app.main import create_app
 
@@ -162,23 +163,30 @@ def css_rules(css: str) -> list[tuple[str, str]]:
 
 
 def accent_in(css: str, selector: str) -> str | None:
+    return declaration_in(css, selector, "--scalar-color-accent")
+
+
+def declaration_in(css: str, selector: str, prop: str) -> str | None:
     for selectors, body in css_rules(css):
         if selector in [s.strip() for s in selectors.split(",")]:
             for declaration in body.split(";"):
                 name, _, value = declaration.partition(":")
-                if name.strip() == "--scalar-color-accent":
+                if name.strip() == prop:
                     return value.strip()
     return None
 
 
+def theme_token(token: str) -> tuple[str, str]:
+    """The light and dark value of a frontend colour token, read from the source of truth."""
+    text = (REPO / "frontend" / "src" / "theme.css").read_text()
+    match = re.search(rf"{token}:\s*light-dark\((#[0-9a-fA-F]{{6}}),\s*(#[0-9a-fA-F]{{6}})\)", text)
+    assert match, f"frontend/src/theme.css no longer declares {token} as light-dark(...)"
+    return match.group(1).lower(), match.group(2).lower()
+
+
 def theme_accent() -> tuple[str, str]:
     """The light and dark `--color-accent` the frontend declares, read from the source of truth."""
-    text = (REPO / "frontend" / "src" / "theme.css").read_text()
-    match = re.search(
-        r"--color-accent:\s*light-dark\((#[0-9a-fA-F]{6}),\s*(#[0-9a-fA-F]{6})\)", text
-    )
-    assert match, "frontend/src/theme.css no longer declares --color-accent as light-dark(...)"
-    return match.group(1).lower(), match.group(2).lower()
+    return theme_token("--color-accent")
 
 
 def test_docs_is_html_that_names_the_spec_and_the_vendored_script(client):
@@ -246,6 +254,47 @@ def test_the_accent_is_the_frontends_in_both_themes(client):
     assert accent_in(css, ".dark-mode") == dark
 
 
+# Scalar does not draw buttons, links or the active sidebar item in --scalar-color-accent: each
+# has its own theme variable, which Scalar's default theme sets to black, white or grey. Every
+# one of them is the frontend's token, so the page shows the chatbot blue.
+SCALAR_THEME = {
+    "--scalar-color-accent": "--color-accent",
+    "--scalar-background-accent": "--color-accent-subtle",
+    "--scalar-link-color": "--color-accent",
+    "--scalar-link-color-hover": "--color-accent-hover",
+    "--scalar-link-color-visited": "--color-accent",
+    "--scalar-button-1": "--color-accent",
+    "--scalar-button-1-hover": "--color-accent-hover",
+    "--scalar-button-1-color": "--color-on-accent",
+    "--scalar-sidebar-color-active": "--color-accent",
+    "--scalar-sidebar-item-active-background": "--color-accent-subtle",
+    "--scalar-sidebar-indent-border-active": "--color-accent",
+}
+
+
+def test_links_buttons_and_the_active_sidebar_item_wear_the_frontends_accent(client):
+    css = "\n".join(parse(page(client)).styles)
+    for variable, token in SCALAR_THEME.items():
+        light, dark = theme_token(token)
+        assert declaration_in(css, ".light-mode", variable) == light, variable
+        assert declaration_in(css, ".dark-mode", variable) == dark, variable
+
+
+def test_wide_content_scrolls_inside_its_block_not_the_page(client):
+    # Checked in Chromium at a 375 px viewport: the page was 409 px wide, pushed out by the
+    # request body's schema name (one 60-character word); the code samples scroll in their
+    # own box. Both rules keep the overflow inside the block that has it.
+    css = "\n".join(parse(page(client)).styles)
+    assert declaration_in(css, ".scalar-app pre", "overflow-x") == "auto"
+    assert declaration_in(css, ".scalar-app pre", "max-width") == "100%"
+    assert declaration_in(css, ".scalar-app .request-body-title", "flex-wrap") == "wrap"
+    assert declaration_in(css, ".scalar-app .request-body-title", "overflow-wrap") == "anywhere"
+    # Hiding the page's overflow would cut content off instead of fitting it.
+    for selector in ("html", "body", ".scalar-app"):
+        assert declaration_in(css, selector, "overflow-x") is None, selector
+        assert declaration_in(css, selector, "overflow") is None, selector
+
+
 def test_the_favicon_is_the_frontends_inlined_as_a_data_uri(client):
     tags = parse(page(client)).tags
     icon = next(attrs for tag, attrs in tags if tag == "link" and attrs.get("rel") == "icon")
@@ -278,6 +327,108 @@ def test_the_reference_routes_are_not_in_the_schema(client):
     spec = client.get("/openapi.json").json()
     assert "/docs" not in spec["paths"]
     assert "/docs/scalar.js" not in spec["paths"]
+
+
+# Scalar's "Test Request" and code samples call the spec's server URL plus the path; with no
+# server entry they call the page's origin plus the path. Behind the frontend the API is under
+# /api, so the spec served there must name /api, and the spec served directly must not.
+
+
+def nginx_api_location() -> dict[str, str]:
+    """The /api location of frontend/nginx.conf: its prefix, proxy_pass and the prefix header."""
+    conf = (REPO / "frontend" / "nginx.conf").read_text()
+    match = re.search(r"location\s+(/api/)\s*\{(.*?)\n\s*\}", conf, re.DOTALL)
+    assert match, "frontend/nginx.conf has no `location /api/` block"
+    body = match.group(2)
+    proxy_pass = re.search(r"^\s*proxy_pass\s+(\S+);", body, re.MULTILINE)
+    header = re.search(r"^\s*proxy_set_header\s+X-Forwarded-Prefix\s+(\S+);", body, re.MULTILINE)
+    assert proxy_pass, "the /api location has no proxy_pass"
+    assert header, "the /api location does not send X-Forwarded-Prefix"
+    return {
+        "location": match.group(1),
+        "proxy_pass": proxy_pass.group(1),
+        "prefix": header.group(1),
+    }
+
+
+def through_nginx(browser_path: str, location: dict[str, str]) -> str:
+    """The path the backend sees for a browser request, as nginx forwards it.
+
+    A proxy_pass with a URI part replaces the matched location prefix with that URI.
+    """
+    assert browser_path.startswith(location["location"]), f"{browser_path} misses nginx's /api/"
+    uri = urlparse(location["proxy_pass"]).path
+    assert uri, "proxy_pass has no URI part, so nginx would not strip /api"
+    return uri + browser_path[len(location["location"]) :]
+
+
+def concrete(path: str) -> str:
+    return re.sub(r"\{[^}]+\}", "1", path)
+
+
+def operations(spec: dict) -> list[tuple[str, str]]:
+    return [(method.upper(), path) for path, ops in spec["paths"].items() for method in ops]
+
+
+def routed(client, method: str, path: str) -> bool:
+    """Whether the app has an API route for this method and concrete path.
+
+    The page, the script and the spec are left out (included routers carry no flag).
+    """
+    scope = {"type": "http", "method": method, "path": path, "root_path": ""}
+    return any(
+        route.matches(scope)[0] is Match.FULL
+        for route in client.app.routes
+        if getattr(route, "include_in_schema", True)
+    )
+
+
+def test_the_spec_served_through_nginx_names_the_api_mount_point(client):
+    location = nginx_api_location()
+    spec = client.get("/openapi.json", headers={"X-Forwarded-Prefix": location["prefix"]}).json()
+    assert spec["servers"] == [{"url": "/api"}]
+    assert operations(spec)
+    for method, path in operations(spec):
+        browser_path = spec["servers"][0]["url"] + concrete(path)
+        backend_path = through_nginx(browser_path, location)
+        assert backend_path == concrete(path)
+        assert routed(client, method, backend_path), f"{method} {browser_path}"
+    health = through_nginx(spec["servers"][0]["url"] + "/health", location)
+    assert client.get(health).json() == {"status": "ok"}
+
+
+def test_the_spec_served_directly_names_no_server_so_scalar_uses_the_origin(client):
+    # `uv run uvicorn app.main:app` or the published port 8000: /docs calls /health there.
+    spec = client.get("/openapi.json").json()
+    assert "servers" not in spec
+    for method, path in operations(spec):
+        assert routed(client, method, concrete(path)), f"{method} {path}"
+    assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_a_request_through_nginx_does_not_leak_its_server_into_later_ones(client):
+    client.get("/openapi.json", headers={"X-Forwarded-Prefix": "/api"})
+    assert "servers" not in client.get("/openapi.json").json()
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["", "/", "api", "https://elsewhere.example", "//elsewhere.example", "/api/", "/a b", "/a?x"],
+)
+def test_a_prefix_that_is_not_a_plain_path_names_no_server(client, prefix):
+    spec = client.get("/openapi.json", headers={"X-Forwarded-Prefix": prefix}).json()
+    assert "servers" not in spec
+
+
+def test_the_specs_paths_are_the_same_through_nginx(client):
+    spec = client.get("/openapi.json", headers={"X-Forwarded-Prefix": "/api"}).json()
+    assert {p: sorted(ops) for p, ops in spec["paths"].items()} == SPEC_PATHS
+
+
+def test_the_vite_dev_proxy_sends_the_same_prefix():
+    # `npm run dev` serves /api/docs through Vite's proxy, which strips /api like nginx does.
+    config = (REPO / "frontend" / "vite.config.ts").read_text()
+    assert re.search(r"""['"]X-Forwarded-Prefix['"]\s*:\s*['"]/api['"]""", config)
 
 
 SOURCE_FIELDS = ["file", "package", "version", "url", "licence", "retrieved", "sha256"]
