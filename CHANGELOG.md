@@ -13,6 +13,12 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 - The OpenAPI spec (`/api/openapi.json`) reports the package version from `backend/pyproject.toml` instead of FastAPI's default `0.1.0`.
 
+## [1.0.1] - 2026-11-12
+
+### Changed
+
+- The release version is 1.0.1 in the backend (`pyproject.toml`, `uv.lock`) and the frontend (`package.json`, `package-lock.json`), so the version the OpenAPI spec shows is the version released.
+
 ## [1.0.0] - 2026-11-11
 
 The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector, replacing the Create React App prototype.
