@@ -4,24 +4,22 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-12
+
 ### Added
 
 - The OpenAPI spec is committed at `docs/openapi.json`, written by `scripts/export_openapi.py` (`cd backend && uv run python ../scripts/export_openapi.py`). A backend test compares the file with the app's schema and fails when it is stale, saying to rerun the export; CI's existing `uv run pytest` step runs it.
 
 ### Changed
 
+- The release version is 1.0.1 in the backend (`pyproject.toml`, `uv.lock`) and the frontend (`package.json`, `package-lock.json`), so the version the OpenAPI spec shows is the version released.
 - The interactive API reference at `/docs` (`/api/docs` through the frontend) is Scalar instead of Swagger UI, from a script vendored in the backend at a pinned version. The page loads nothing from outside — no CDN, no web fonts, no request proxy, no telemetry — and "try it" sends its request to this origin. It wears the app's accent in light and dark and the app's favicon; `/redoc` is gone. The spec at `/openapi.json` is unchanged.
+- The API guide at `docs/api.md` now points to the interactive reference and committed OpenAPI spec for endpoint details, and documents the behaviour the spec cannot express: ingestion progress and failures, chat history, and the NDJSON chat stream with examples.
 - The README demo GIF is a real session, recorded by `npm run capture:live` against a running instance (LIVE_URL) with real models: eight positive-reinforcement dog-training guides, a fast answer, a deep answer with its plan, and a refused question. The capture stops if a claim recommends an aversive training method or if the frames differ in size; the PDFs are not in the repo.
 
 ### Fixed
 
 - The OpenAPI spec (`/api/openapi.json`) reports the package version from `backend/pyproject.toml` instead of FastAPI's default `0.1.0`.
-
-## [1.0.1] - 2026-11-12
-
-### Changed
-
-- The release version is 1.0.1 in the backend (`pyproject.toml`, `uv.lock`) and the frontend (`package.json`, `package-lock.json`), so the version the OpenAPI spec shows is the version released.
 
 ## [1.0.0] - 2026-11-11
 
