@@ -115,7 +115,7 @@ A chat answer streams as NDJSON, one event per line: `step` (deep mode), `claim`
 | 422 | Not a PDF, unreadable, no pages, over the page limit (500), or an invalid chat request |
 | 503 | `GET /health`: the database is unavailable |
 
-Every endpoint, its fields and the event shapes are in [docs/api.md](docs/api.md).
+[docs/api.md](docs/api.md) links the interactive reference and the OpenAPI spec, and documents the chat events and behaviour the spec does not carry.
 
 ## Configuration
 
@@ -183,7 +183,7 @@ Details, including deep mode and how the viewer finds the quote on the page, are
 ## Documentation
 
 - [docs/web-app.md](docs/web-app.md): using the page: collections, asking, deep mode, the citation viewer, themes, keyboard and screen readers
-- [docs/api.md](docs/api.md): the HTTP API, status codes and the chat event stream
+- [docs/api.md](docs/api.md): links to the interactive reference and spec, plus chat events and behaviour the spec does not carry
 - [docs/configuration.md](docs/configuration.md): every setting, local and cloud models, OCR, reranking, prices
 - [docs/how-it-works.md](docs/how-it-works.md): ingestion, retrieval, the citation check, deep mode
 - [docs/evaluation.md](docs/evaluation.md): the evaluation, its measures and how to run it

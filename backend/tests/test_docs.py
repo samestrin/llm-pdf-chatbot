@@ -1,4 +1,4 @@
-"""The API reference at /docs: Scalar from a vendored script, offline, in the app's accent."""
+"""The interactive API reference and the short guide to behavior outside its spec."""
 
 import base64
 import hashlib
@@ -47,6 +47,73 @@ OUTSIDE_HOSTS = [
 @pytest.fixture
 def client():
     return TestClient(create_app(create_engine("sqlite://")))
+
+
+def test_api_guide_links_the_reference_and_spec_without_an_endpoint_table():
+    guide = (REPO / "docs" / "api.md").read_text()
+    first_paragraph = guide.split("\n\n")[1]
+    assert "[`/api/docs`](/api/docs)" in first_paragraph
+    assert "localhost:8000/docs" not in first_paragraph
+    assert "`/api/openapi.json`" in guide
+    assert "[`docs/openapi.json`](openapi.json)" in guide
+    assert "## Behaviour the spec does not carry" in guide
+    assert "## Endpoints" not in guide
+    assert not re.search(r"^\|\s*(?:GET|POST|DELETE|PUT|PATCH)\s", guide, re.MULTILINE)
+
+
+def test_api_guide_keeps_the_behavior_the_spec_does_not_carry():
+    guide = (REPO / "docs" / "api.md").read_text()
+    required = [
+        "`chunks_total`",
+        "`chunks_embedded`",
+        "`ready` with failed pages",
+        "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)",
+        "no page could be read",
+        "client's file name never touches the file system",
+        "oldest first",
+        "client keeps",
+        "answer may be empty",
+        "`CHAT_HISTORY_TURNS`",
+        "default 6",
+        "follow-up",
+        "retrieved passages only",
+        "whitespace-only question",
+        "before any model call",
+    ]
+    missing = [text for text in required if text not in guide]
+    assert not missing, missing
+
+
+def test_api_guide_has_one_valid_ndjson_example_for_every_chat_event_type():
+    guide = (REPO / "docs" / "api.md").read_text()
+    frontend = (REPO / "frontend" / "src" / "api.ts").read_text()
+    union = re.search(r"export type ChatEvent = ([^\n]+)", frontend).group(1)
+    interfaces = re.findall(r"[A-Za-z]+Event", union)
+    event_types = {
+        re.search(rf"export interface {name}\b.*?\btype: '([^']+)'", frontend, re.DOTALL).group(1)
+        for name in interfaces
+    }
+    block = re.search(r"```ndjson\n(.*?)\n```", guide, re.DOTALL).group(1)
+    events = [json.loads(line) for line in block.splitlines()]
+    assert [event["type"] for event in events] == ["step", "claim", "refusal", "error", "done"]
+    assert {event["type"] for event in events} == event_types
+    required_fields = {
+        "step": {"type", "question", "pages"},
+        "claim": {"type", "text", "document", "page", "chunk_id", "quote"},
+        "refusal": {"type", "passages"},
+        "error": {"type", "message"},
+        "done": {"type", "mode", "model", "cost"},
+    }
+    for event in events:
+        assert set(event) == required_fields[event["type"]]
+
+
+def test_readme_points_to_the_short_api_guide():
+    readme = (REPO / "README.md").read_text()
+    assert "Every endpoint, its fields and the event shapes are in" not in readme
+    assert "interactive reference" in readme
+    assert "behaviour the spec does not carry" in readme
+    assert readme.count("[docs/api.md](docs/api.md)") == 2
 
 
 class Tags(HTMLParser):
