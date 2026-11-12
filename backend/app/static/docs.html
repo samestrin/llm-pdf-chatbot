@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>llm-pdf-chatbot API reference</title>
+    <!-- frontend/public/favicon.svg, inlined so the page asks for no icon file.
+         tests/test_docs.py compares it byte for byte with that file. -->
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ijc1MiA1NTMgNTQ1IDU1OSI+PHN0eWxlPi5we2ZpbGw6IzI0NTFDQ30uZntmaWxsOiMxNTE3MUN9QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyayl7LnB7ZmlsbDojOEFCMEZGfS5me2ZpbGw6I0U2RThFQ319PC9zdHlsZT48cGF0aCBjbGFzcz0icCIgZD0iTSA4MTYuMDAwIDc1MS41MDAgUSA4MTUuNTg1IDc1My4yMTAgODE1LjU5MCA3NjMuODc1IEwgODE1LjYwNyA5MDcuMTI1IFEgODE1LjUzNyA5NDYuMjk0IDgzOS44NTEgOTc1LjAwNiBRIDg3MS41MDggMTAxMi4zODcgOTIyLjYyNSAxMDEyLjQ3MCBRIDEwNzUuODE2IDEwMTIuNzE2IDExMzcuODc1IDEwMTIuMDY1IFEgMTE1Mi4wOTQgMTAxMS45MTYgMTE1NC4zMjUgMTAxMy41MzIgUSAxMTk5LjE1MyAxMDQ1Ljk4OCAxMjA0LjM4NCAxMDQ2LjUxNCBRIDEyMjAuNjM3IDEwNDguMTUwIDEyMjAuNTM2IDEwMjYuMTI1IEwgMTIyMC4yODMgOTQxLjM3NSBRIDEyMjAuMjcyIDkzNy42OTUgMTIyNi43NTcgOTIwLjg4MiBRIDEyMzIuMTA4IDkwNy4wMDkgMTIzMi4wMTggODgxLjEyNSBMIDEyMzEuODg3IDcyNi4xMjUgQyAxMjMxLjc3NyA2NjkuODQ0IDExODYuMTA2IDYxOC45NzIgMTEyOS4xMjYgNjE4LjkxNSBMIDEwMDUuMzc1IDYxOC43OTEgUSA5NzMuMTAxIDYxOC43NTkgOTcxLjc1MCA2MTkuMDAwIFEgOTcyLjEyNCA2MjUuMzQxIDk3Mi4yMTkgNzEwLjg3NSBDIDk3Mi4yNDQgNzM0LjEzOSA5NTQuNzA3IDc1MS4xMjEgOTMxLjM3NyA3NTEuMTg0IEwgODE2LjAwMCA3NTEuNTAwIFoiLz48cGF0aCBjbGFzcz0iZiIgZD0iTSA4MTYuMDAwIDc1MS41MDAgTCA5MzEuMzc3IDc1MS4xODQgQyA5NTQuNzA3IDc1MS4xMjEgOTcyLjI0NCA3MzQuMTM5IDk3Mi4yMTkgNzEwLjg3NSBRIDk3Mi4xMjQgNjI1LjM0MSA5NzEuNzUwIDYxOS4wMDAgUSA5NDEuNzMxIDYxNi43ODEgOTE4LjQ3MSA2MzguMDkxIEMgODkwLjYxMiA2NjMuNjE1IDg2My41NTMgNjg5LjgzOCA4MzYuMDIyIDcxNS42NzUgUSA4MTguNDU3IDczMi4xNTkgODE2LjAwMCA3NTEuNTAwIFoiLz48L3N2Zz4K" />
+    <!-- The accent is --color-accent from frontend/src/theme.css, light and dark.
+         Scalar's own theme variables sit in @layer scalar-theme, so these unlayered
+         rules win. tests/test_docs.py checks both colours against theme.css. -->
+    <style>
+      .light-mode {
+        --scalar-color-accent: #2451cc;
+      }
+      .dark-mode {
+        --scalar-color-accent: #8ab0ff;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Both URLs are relative: behind the frontend's nginx this page is /api/docs and
+         on port 8000 it is /docs, and each resolves against its own prefix.
+         withDefaultFonts, proxyUrl and telemetry are the defaults of the pinned Scalar
+         (app/static/SOURCES.md) that reach outside: its web font host and its request
+         proxy. All three are off, so the page loads nothing but this origin's
+         openapi.json and docs/scalar.js. No colour mode is set: Scalar follows the
+         system, like the app and the favicon do. -->
+    <script
+      id="api-reference"
+      data-url="openapi.json"
+      data-configuration='{"withDefaultFonts": false, "proxyUrl": null, "telemetry": false}'
+    ></script>
+    <script src="docs/scalar.js"></script>
+  </body>
+</html>

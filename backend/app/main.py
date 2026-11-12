@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -13,6 +14,8 @@ from app.ingest import Embedder, IngestWorker, batch_size_from_env
 from app.llm import LLMClient
 
 DEFAULT_DATABASE_URL = "sqlite:///./app.db"
+# The API reference page and the vendored Scalar script it loads (see static/SOURCES.md).
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def make_engine() -> Engine:
@@ -41,7 +44,13 @@ def create_app(
         finally:
             app.state.worker.stop()
 
-    app = FastAPI(title="llm-pdf-chatbot", version=package_version(), lifespan=lifespan)
+    app = FastAPI(
+        title="llm-pdf-chatbot",
+        version=package_version(),
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
     app.state.engine = engine or make_engine()
     app.state.limits = documents.Limits.from_env()
     app.state.embedder = embedder
@@ -60,6 +69,17 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=503, detail="database unavailable") from exc
         return {"status": "ok"}
+
+    # The reference is a page, not an endpoint: both routes stay out of the schema, and
+    # /openapi.json is unchanged. The page names the spec and the script by relative URL,
+    # so it works at /docs on port 8000 and at /api/docs behind the frontend's nginx.
+    @app.get("/docs", include_in_schema=False)
+    def api_reference() -> HTMLResponse:
+        return HTMLResponse((STATIC_DIR / "docs.html").read_text(encoding="utf-8"))
+
+    @app.get("/docs/scalar.js", include_in_schema=False)
+    def scalar_script() -> FileResponse:
+        return FileResponse(STATIC_DIR / "scalar.js", media_type="text/javascript")
 
     return app
 

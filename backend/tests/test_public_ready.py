@@ -8,8 +8,12 @@ LICENCES = ROOT / "docs" / "fixture-licences.md"
 # Internal names that must not reach a public repo. They are built from pieces so this
 # file does not contain them itself; the scan still skips this file and the workflow that
 # runs gitleaks.
+#
+# The private root is an absolute path, so a lookbehind keeps a relative path segment from
+# matching it: the vendored Scalar bundle names an icon "../icons/Workspace.svg".
 BANNED = re.compile(
-    "gaunt" + "let|" + r"[\w-]+\.lan\b|" + "paper" + "clip|/workspace|llm-pdf-chatbot-planning",
+    "gaunt" + "let|" + r"[\w-]+\.lan\b|" + "paper" + "clip|" + r"(?<![\w.-])/work" + "space"
+    "|llm-pdf-chatbot-planning",
     re.IGNORECASE,
 )
 SKIPPED = {"backend/tests/test_public_ready.py", ".github/workflows/public-ready.yml"}
@@ -64,10 +68,23 @@ def test_the_banned_pattern_catches_each_name():
         "orches" + "trator" + ".lan:3100",
         "Paper" + "Clip",
         "/workspace/x",
+        # The private root on its own, and the shapes a leak of it takes in a command or a path.
+        "/work" + "space",
+        "cd /work" + "space",
+        "path=/work" + "space/llm-pdf-chatbot",
+        "(/work" + "space)",
     ]
     for text in names:
         assert BANNED.search(text), text
     assert BANNED.search("samestrin/llm-pdf-chatbot-planning")
+
+
+def test_the_banned_pattern_leaves_a_vendored_icon_path_alone():
+    # A real line from the vendored Scalar bundle (app/static/scalar.js): an icon module
+    # name in a relative path, not the private root. The bundle is scanned like every
+    # other tracked file, so the pattern has to tell the two apart.
+    assert not BANNED.search('"../icons/Work' + 'space.svg":K1e')
+    assert not BANNED.search("icons/Work" + "space.svg")
 
 
 def test_the_banned_pattern_leaves_ordinary_words_alone():
