@@ -1,5 +1,7 @@
 import os
+import tomllib
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import create_engine, text
@@ -15,6 +17,12 @@ DEFAULT_DATABASE_URL = "sqlite:///./app.db"
 
 def make_engine() -> Engine:
     return create_engine(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+
+
+def package_version() -> str:
+    """Read pyproject.toml beside app/: the project is never installed, so metadata has no version."""
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    return tomllib.loads(pyproject.read_text())["project"]["version"]
 
 
 def create_app(
@@ -33,7 +41,7 @@ def create_app(
         finally:
             app.state.worker.stop()
 
-    app = FastAPI(title="llm-pdf-chatbot", lifespan=lifespan)
+    app = FastAPI(title="llm-pdf-chatbot", version=package_version(), lifespan=lifespan)
     app.state.engine = engine or make_engine()
     app.state.limits = documents.Limits.from_env()
     app.state.embedder = embedder
