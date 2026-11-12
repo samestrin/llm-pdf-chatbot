@@ -4,20 +4,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
-### Added
-
-- The compose smoke test (`scripts/compose-smoke.sh`) now asks a question end to end: a fake OpenAI-compatible model (`scripts/fake-llm/`, added by `docker-compose.smoke.yml`) answers it, the smoke checks the streamed answer cites the sample PDF's page, then stops the fake and checks the answer fails as "the model endpoint is unreachable". `docker-compose.yml` is unchanged.
-- `docker-compose.proxy.yml` and `docs/deploy/reverse-proxy.md`: run behind a reverse proxy with a login (for example Traefik with a forward-auth middleware), with no published ports, no model server and no source mounts, settings from an `.env.proxy` kept only on the host; `scripts/proxy-compose-check.sh` checks it in CI.
-
-### Changed
-
-- The frontend's nginx forwards `/api` to `llm-pdf-chatbot-backend` instead of `backend`, a name no other app shares on a common Docker network; `docker-compose.yml` gives the backend that alias. A compose file of your own that runs the frontend image must give its backend that name.
-
-### Fixed
-
-- The answer's lead line reads `Found in lease.pdf, p. 2` with the comma flush against the name, and a one-page document reads `Ready: 1 page` (also in the reading and partly-read lines), not `1 pages`.
-
-## [1.0.0] - 2026-11-06
+## [1.0.0] - 2026-11-11
 
 The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector, replacing the Create React App prototype.
 
@@ -40,6 +27,8 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 - A "Try it" section in the README, and refreshed screenshots including a dark-mode and a phone-width image.
 - An evaluation: 40 questions (10 unanswerable) over 5 freely licensed PDFs, scored for accuracy, citation precision, refusal accuracy and cost.
 - A release workflow: a `v*` tag builds the backend and frontend images and, once the tagged commit's checks are green, creates a GitHub release with the version's CHANGELOG.md section as its notes; the images are pushed to the GitHub Container Registry only when the repository variable `PUBLISH_IMAGES` is `true` (unset by default).
+- The compose smoke test (`scripts/compose-smoke.sh`) now asks a question end to end: a fake OpenAI-compatible model (`scripts/fake-llm/`, added by `docker-compose.smoke.yml`) answers it, the smoke checks the streamed answer cites the sample PDF's page, then stops the fake and checks the answer fails as "the model endpoint is unreachable". `docker-compose.yml` is unchanged.
+- `docker-compose.proxy.yml` and `docs/deploy/reverse-proxy.md`: run behind a reverse proxy with a login (for example Traefik with a forward-auth middleware), with no published ports, no model server and no source mounts, settings from an `.env.proxy` kept only on the host; `scripts/proxy-compose-check.sh` checks it in CI.
 
 ### Changed
 
@@ -56,3 +45,8 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 
 [Unreleased]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/samestrin/llm-pdf-chatbot/releases/tag/v1.0.0
+- The frontend's nginx forwards `/api` to `llm-pdf-chatbot-backend` instead of `backend`, a name no other app shares on a common Docker network; `docker-compose.yml` gives the backend that alias. A compose file of your own that runs the frontend image must give its backend that name.
+
+### Fixed
+
+- The answer's lead line reads `Found in lease.pdf, p. 2` with the comma flush against the name, and a one-page document reads `Ready: 1 page` (also in the reading and partly-read lines), not `1 pages`.
