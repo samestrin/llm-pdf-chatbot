@@ -107,7 +107,9 @@ def accent_in(css: str, selector: str) -> str | None:
 def theme_accent() -> tuple[str, str]:
     """The light and dark `--color-accent` the frontend declares, read from the source of truth."""
     text = (REPO / "frontend" / "src" / "theme.css").read_text()
-    match = re.search(r"--color-accent:\s*light-dark\((#[0-9a-fA-F]{6}),\s*(#[0-9a-fA-F]{6})\)", text)
+    match = re.search(
+        r"--color-accent:\s*light-dark\((#[0-9a-fA-F]{6}),\s*(#[0-9a-fA-F]{6})\)", text
+    )
     assert match, "frontend/src/theme.css no longer declares --color-accent as light-dark(...)"
     return match.group(1).lower(), match.group(2).lower()
 
@@ -182,9 +184,10 @@ def test_the_favicon_is_the_frontends_inlined_as_a_data_uri(client):
     icon = next(attrs for tag, attrs in tags if tag == "link" and attrs.get("rel") == "icon")
     prefix = "data:image/svg+xml;base64,"
     assert icon["href"].startswith(prefix)
-    assert base64.b64decode(icon["href"][len(prefix) :]) == (
-        REPO / "frontend" / "public" / "favicon.svg"
-    ).read_bytes()
+    assert (
+        base64.b64decode(icon["href"][len(prefix) :])
+        == (REPO / "frontend" / "public" / "favicon.svg").read_bytes()
+    )
 
 
 def test_the_vendored_script_is_served_as_javascript(client):
