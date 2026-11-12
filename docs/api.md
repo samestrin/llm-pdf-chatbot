@@ -4,6 +4,8 @@ The backend is a FastAPI app on port 8000 (`BACKEND_PORT`). Its interactive docs
 
 There is no auth: the app is local and single-user.
 
+The spec the app serves at `/openapi.json` is also committed at [`openapi.json`](openapi.json) in this folder. After changing an endpoint, regenerate it with `cd backend && uv run python ../scripts/export_openapi.py`; a backend test fails when the committed file is stale.
+
 ## Endpoints
 
 | Method and path | What it does | Status codes |
