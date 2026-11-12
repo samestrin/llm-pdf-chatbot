@@ -4,6 +4,8 @@ The backend is a FastAPI app on port 8000 (`BACKEND_PORT`). Its interactive refe
 
 The app serves the OpenAPI spec at `/api/openapi.json`; the same spec is committed as [`docs/openapi.json`](openapi.json). After changing an endpoint, regenerate it with `cd backend && uv run python ../scripts/export_openapi.py`; a backend test fails when the committed file is stale.
 
+Through the frontend, nginx tells the backend its `/api` prefix (`X-Forwarded-Prefix`), so the spec served at `/api/openapi.json` names `/api` as its server and the reference's "Test Request" and code samples call `/api/...`. Served directly on port 8000, the spec names no server and they call the backend's own origin.
+
 ## Behaviour the spec does not carry
 
 ### Ingestion and stored files
