@@ -6,6 +6,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Changed
 
+- The interactive API reference at `/docs` (`/api/docs` through the frontend) is Scalar instead of Swagger UI, from a script vendored in the backend at a pinned version. The page loads nothing from outside — no CDN, no web fonts, no request proxy, no telemetry — and "try it" sends its request to this origin. It wears the app's accent in light and dark and the app's favicon; `/redoc` is gone. The spec at `/openapi.json` is unchanged.
 - The README demo GIF is a real session, recorded by `npm run capture:live` against a running instance (LIVE_URL) with real models: eight positive-reinforcement dog-training guides, a fast answer, a deep answer with its plan, and a refused question. The capture stops if a claim recommends an aversive training method or if the frames differ in size; the PDFs are not in the repo.
 
 ### Fixed
