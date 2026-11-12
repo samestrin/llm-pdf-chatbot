@@ -21,7 +21,7 @@ jobs:
       - run: scripts/compose-smoke.sh
 
   proxy-compose:
-    # docker-compose.proxy.yml parses and keeps its review-stack shape (docs/deploy/reverse-proxy.md).
+    # docker-compose.proxy.yml parses and keeps its reverse-proxy shape (docs/deploy/reverse-proxy.md).
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     timeout-minutes: 5
     steps:

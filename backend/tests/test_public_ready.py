@@ -5,12 +5,28 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[2]
 LICENCES = ROOT / "docs" / "fixture-licences.md"
 
-# Internal names that must not reach a public repo. This file and the workflow that
-# runs gitleaks name them on purpose, so the scan skips both.
+# Internal names that must not reach a public repo. They are built from pieces so this
+# file does not contain them itself; the scan still skips this file and the workflow that
+# runs gitleaks.
 BANNED = re.compile(
-    r"gauntlet|[\w-]+\.lan\b|paperclip|/workspace|llm-pdf-chatbot-planning", re.IGNORECASE
+    "gaunt" + "let|" + r"[\w-]+\.lan\b|" + "paper" + "clip|/workspace|llm-pdf-chatbot-planning",
+    re.IGNORECASE,
 )
 SKIPPED = {"backend/tests/test_public_ready.py", ".github/workflows/public-ready.yml"}
+
+# Private host names that must not appear anywhere in the tree, this file excluded.
+PRIVATE_HOSTS = re.compile(
+    "|".join(
+        [
+            re.escape("estr" + ".in"),
+            "em" + "bassy",
+            r"\." + "lan" + r"\b",
+            "orches" + "trator",
+        ]
+    ),
+    re.IGNORECASE,
+)
+LOCKFILES = {"package-lock.json", "uv.lock", "yarn.lock", "pnpm-lock.yaml", "poetry.lock"}
 
 
 def tracked_files() -> list[str]:
@@ -20,17 +36,19 @@ def tracked_files() -> list[str]:
     return [p for p in out.split("\0") if p and (ROOT / p).is_file()]
 
 
-def banned_names(files: list[str]) -> list[str]:
+def banned_names(
+    files: list[str], pattern: re.Pattern[str] = BANNED, skipped: set[str] = SKIPPED
+) -> list[str]:
     hits = []
     for rel in files:
-        if rel in SKIPPED:
+        if rel in skipped:
             continue
         try:
             text = (ROOT / rel).read_text()
         except UnicodeDecodeError:
             continue  # binary
         for n, line in enumerate(text.splitlines(), 1):
-            for match in BANNED.finditer(line):
+            for match in pattern.finditer(line):
                 hits.append(f"{rel}:{n}: {match.group(0)}")
     return hits
 
@@ -40,7 +58,14 @@ def fixture_files(files: list[str]) -> list[str]:
 
 
 def test_the_banned_pattern_catches_each_name():
-    for text in ["Gauntlet", "ci-runner", "build-host:3100", "PaperClip", "/workspace/x"]:
+    names = [
+        "Gaunt" + "let",
+        "runner" + ".lan",
+        "orches" + "trator" + ".lan:3100",
+        "Paper" + "Clip",
+        "/workspace/x",
+    ]
+    for text in names:
         assert BANNED.search(text), text
     assert BANNED.search("samestrin/llm-pdf-chatbot-planning")
 
@@ -52,6 +77,46 @@ def test_the_banned_pattern_leaves_ordinary_words_alone():
 
 def test_the_tree_has_no_banned_internal_names():
     assert banned_names(tracked_files()) == []
+
+
+def private_host_files(files: list[str]) -> list[str]:
+    return [
+        p
+        for p in files
+        if PurePosixPath(p).name not in LOCKFILES
+        and "node_modules" not in PurePosixPath(p).parts
+        and ".git" not in PurePosixPath(p).parts
+    ]
+
+
+def test_the_private_host_pattern_catches_each_name():
+    names = [
+        "pdfchat." + "estr" + ".in",
+        "ESTR" + ".IN",
+        "Em" + "bassy",
+        "docker-compose." + "em" + "bassy" + ".yml",
+        "ai" + ".lan",
+        "http://runner" + ".LAN:8000",
+        "Orches" + "trator",
+    ]
+    for text in names:
+        assert PRIVATE_HOSTS.search(text), text
+
+
+def test_the_private_host_pattern_leaves_ordinary_words_alone():
+    for text in ["x.lang", "plan", "estrin", "the proxy", "chat.example.com", "lan"]:
+        assert not PRIVATE_HOSTS.search(text), text
+
+
+def test_the_private_host_scan_skips_lockfiles_and_vendored_code():
+    files = ["a/package-lock.json", "uv.lock", "x/node_modules/y.js", "docs/a.md"]
+    assert private_host_files(files) == ["docs/a.md"]
+
+
+def test_the_tree_has_no_private_host_names():
+    files = private_host_files(tracked_files())
+    hits = banned_names(files, PRIVATE_HOSTS, {"backend/tests/test_public_ready.py"})
+    assert hits == []
 
 
 def test_every_fixture_file_is_listed_in_the_licences_doc():

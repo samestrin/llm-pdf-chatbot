@@ -1,16 +1,16 @@
-# Private review stack for https://chat.example.com on proxy host, behind Traefik and
-# Authelia. See docs/deploy/reverse-proxy.md.
+# The stack for running behind a reverse proxy that does the login (for example Traefik
+# with a forward-auth middleware). See docs/deploy/reverse-proxy.md.
 #
-# - No `ports:`. Traefik reaches the frontend by container name over the external
-#   `proxy` network; the frontend's nginx forwards /api to the backend.
-# - No model server. The backend calls the fleet litellm with its own key.
-# - The images are built on proxy host from this folder and named by compose's default
-#   <project>-<service> (llm-pdf-chatbot-backend, llm-pdf-chatbot-frontend), which the
-#   deploy receiver tags :rollback; so no built service sets `image:`.
-# - The deploy receiver dumps the database before each deploy through the service `db`
-#   and checks the volume llm-pdf-chatbot_db-data: keep the project name, the service
-#   name `db` and the volume name `db-data`.
-# - Settings come from `.env.proxy`, which exists only on proxy host and is never in git.
+# - No `ports:`. The reverse proxy reaches the frontend by container name over the
+#   external `proxy` network; the frontend's nginx forwards /api to the backend.
+# - No model server. The backend calls an OpenAI-compatible model gateway with its own key.
+# - The images are built on the host from this folder and named by compose's default
+#   <project>-<service> (llm-pdf-chatbot-backend, llm-pdf-chatbot-frontend), which
+#   deploy tooling can tag :rollback; so no built service sets `image:`.
+# - Deploy tooling that dumps the database before each deploy finds it through the
+#   service `db` and the volume llm-pdf-chatbot_db-data: keep the project name, the
+#   service name `db` and the volume name `db-data`.
+# - Settings come from `.env.proxy`, which never goes in git.
 name: llm-pdf-chatbot
 
 x-logging: &logging

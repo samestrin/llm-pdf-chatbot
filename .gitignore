@@ -78,7 +78,7 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
-# the proxy host settings live only on proxy host (docs/deploy/reverse-proxy.md)
+# the reverse-proxy deploy settings live only on the host (docs/deploy/reverse-proxy.md)
 .env.proxy
 
 # parcel-bundler cache (https://parceljs.org/)

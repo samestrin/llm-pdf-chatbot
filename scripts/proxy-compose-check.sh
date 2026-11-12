@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Checks docker-compose.proxy.yml without starting anything: `docker compose config`
-# passes with a placeholder .env.proxy, and the stack keeps the shape the proxy host
-# review stack needs (docs/deploy/reverse-proxy.md): no published host port, no model server,
+# passes with a placeholder .env.proxy, and the stack keeps the shape a deploy behind a
+# reverse proxy needs (docs/deploy/reverse-proxy.md): no published host port, no model server,
 # no source bind-mount, `restart: unless-stopped`, the external `proxy` network, and the
-# `db` service with its `db-data` volume that the deploy receiver backs up.
+# `db` service with its `db-data` volume that deploy tooling backs up.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 COMPOSE_FILE=docker-compose.proxy.yml
 ENV_FILE=.env.proxy
 
-# The real .env.proxy exists only on proxy host. Write a placeholder for the check and
+# The real .env.proxy exists only on the host. Write a placeholder for the check and
 # remove it after, but never touch one that is already here.
 created_env=
 if [ ! -e "$ENV_FILE" ]; then
@@ -72,7 +72,7 @@ for name, service in services.items():
         problems.append("db is on the proxy network")
     if name in ("backend", "frontend"):
         if "image" in service and service["image"] != f"llm-pdf-chatbot-{name}":
-            problems.append(f"{name} sets image {service['image']!r}; the receiver tags llm-pdf-chatbot-{name}")
+            problems.append(f"{name} sets image {service['image']!r}; deploy tooling tags llm-pdf-chatbot-{name}")
         if "proxy" not in service.get("networks", {}):
             problems.append(f"{name} is not on the proxy network")
         # `config` folds env_file into environment.
@@ -89,5 +89,5 @@ for problem in problems:
     print(f"FAIL: {problem}", file=sys.stderr)
 if problems:
     sys.exit(1)
-print("proxy host compose shape: ok (no host port, no model server, no bind-mount)")
+print("proxy compose shape: ok (no host port, no model server, no bind-mount)")
 EOF

@@ -71,9 +71,9 @@ Builds the full stack on throwaway ports, then checks the backend health endpoin
 
 The frontend's nginx forwards `/api` to the host `llm-pdf-chatbot-backend`: the backend's network alias in `docker-compose.yml` and its container name in `docker-compose.proxy.yml`. A compose file of your own that runs the frontend image needs that name on the backend too.
 
-## Private review deploy
+## Deploy behind a reverse proxy
 
-`docker-compose.proxy.yml` runs the stack on the owner's private review host behind Traefik and Authelia, with no published ports and no model server; [deploy/reverse-proxy.md](deploy/reverse-proxy.md) lists its settings, the backup and the rollback. `./scripts/proxy-compose-check.sh` checks the file without starting anything.
+`docker-compose.proxy.yml` runs the stack behind a reverse proxy that does the login (for example Traefik with a forward-auth middleware), with no published ports and no model server; [deploy/reverse-proxy.md](deploy/reverse-proxy.md) lists its settings, the backup and the rollback. `./scripts/proxy-compose-check.sh` checks the file without starting anything.
 
 ## Releases
 
