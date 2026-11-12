@@ -83,7 +83,10 @@ test('captures the README screenshots and GIF', async ({ page, api }) => {
   await page.setViewportSize({ width: 390, height: 780 })
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({ path: OUT + README_IMAGES.phone })
-  await page.setViewportSize({ width: 960, height: 640 })
+  // Back to the desktop size before the last GIF frame: every frame must share one size,
+  // or a browser paints a smaller frame over the corner of the one before it.
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.evaluate(() => window.scrollTo(0, 0))
 
   const chip = answer.getByRole('note', { name: 'Citation' }).first()
   await chip.click()
@@ -94,6 +97,9 @@ test('captures the README screenshots and GIF', async ({ page, api }) => {
   await snap()
 
   // GIF: one frame per step, 1.2 s each, the last held longer.
+  const sizes = new Set(frames.map((buf) => { const { width, height } = PNG.sync.read(buf); return `${width}x${height}` }))
+  if (sizes.size !== 1) throw new Error(`GIF frames differ in size (${[...sizes].join(', ')}); refusing to write demo.gif`)
+
   const gif = GIFEncoder()
   frames.forEach((buf, i) => {
     const { data, width, height } = PNG.sync.read(buf)
