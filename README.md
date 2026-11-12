@@ -17,7 +17,7 @@ A self-hosted web app for anyone who wants to chat with their own PDFs and get a
 
 ## Demo
 
-![The whole flow: upload, ask, read the cited answer](docs/img/demo.gif)
+![A real session on eight dog-training guides: a fast answer, a deep answer with its plan, and a question the guides do not answer](docs/img/demo.gif)
 
 ![A streamed answer with citation chips](docs/img/answer.png)
 
