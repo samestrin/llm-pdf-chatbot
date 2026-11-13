@@ -52,14 +52,25 @@ The browser tests start their own Vite dev server and never call a real backend:
 
 ## README images
 
-The screenshots and the GIF in `docs/img/` (`upload.png`, `answer.png`, `citation.png`, `dark.png`, `phone.png`, `demo.gif`) are generated, not drawn by hand:
+The images in `docs/img/` are generated, not drawn by hand, by two commands.
+
+The screenshots (the PNGs: `upload.png`, `answer.png`, `citation.png`, `dark.png`, `phone.png`) come from `npm run capture:readme`:
 
 ```bash
 cd frontend
 npm run capture:readme
 ```
 
-It runs `frontend/e2e/capture/` against the same fixture-backed page and servers as the browser tests, and writes the files to `docs/img/`. `frontend/e2e/readme-images.spec.ts` checks each file exists and is at most 5 MB. Run it again when the page changes in a way the images show.
+It runs `frontend/e2e/capture/` against the same fixture-backed page and servers as the browser tests, and writes the PNGs to `docs/img/`. Run it again when the page changes in a way the images show; it never touches the GIF.
+
+The demo GIF (`demo.gif`) is a real session, recorded by `npm run capture:live` against a running instance with real models:
+
+```bash
+cd frontend
+LIVE_URL=http://localhost:8080 npm run capture:live
+```
+
+It runs `frontend/e2e/live/` and needs a collection already ingested (`LIVE_COLLECTION`, default `dog-training`). The capture stops if a claim recommends an aversive training method or if the frames differ in size. `frontend/e2e/readme-images.spec.ts` checks each image exists and is at most 5 MB.
 
 ## Verify the stack
 
