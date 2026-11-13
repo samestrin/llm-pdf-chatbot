@@ -51,3 +51,12 @@ test('the dev server proxies /api to the backend with the prefix stripped', asyn
   expect(res.status()).toBe(200)
   expect(await res.json()).toEqual({ status: 'ok', server: 'fake-backend' })
 })
+
+test('the dev server proxy tells the backend it is mounted at /api', async ({ request }) => {
+  // The backend's spec then names /api as its server, so the API reference at /api/docs
+  // calls /api/... (backend/app/main.py). nginx sends the same header (scripts/compose-smoke.sh).
+  const res = await request.get('/api/_fake/request')
+
+  expect(res.status()).toBe(200)
+  expect(await res.json()).toEqual({ path: '/_fake/request', forwardedPrefix: '/api' })
+})

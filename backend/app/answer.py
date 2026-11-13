@@ -475,7 +475,14 @@ class ChatRequest(BaseModel):
         return value
 
 
-@router.post("/collections/{collection}/chat", summary="Answer a question, streamed as NDJSON")
+@router.post(
+    "/collections/{collection}/chat",
+    summary="Answer a question, streamed as NDJSON",
+    response_class=StreamingResponse,
+    responses={
+        200: {"description": "One JSON event per line", "content": {"application/x-ndjson": {}}}
+    },
+)
 def chat(
     collection: Annotated[str, PathParam(min_length=1, max_length=200)],
     body: ChatRequest,

@@ -1,4 +1,6 @@
-// Files `npm run capture:readme` writes to docs/img/ (see e2e/capture/).
+// The README's images in docs/img/: `npm run capture:readme` writes the PNGs from the
+// fixture-backed page (e2e/capture/); `npm run capture:live` records the GIF from a
+// running instance (e2e/live/).
 export const README_IMAGES = {
   upload: 'upload.png',
   answer: 'answer.png',

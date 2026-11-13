@@ -8,6 +8,9 @@
 // request whose question is `key` gets the first batch as NDJSON at once; each
 // `POST /_fake/chat/{key}/next` writes the next batch, and the body ends after
 // the last one. The key keeps parallel tests apart on the one server.
+//
+// `GET /_fake/request` answers with the path it was asked for and the
+// X-Forwarded-Prefix header it received, so a test can see what the proxy sends.
 import { createServer } from 'node:http'
 
 const port = Number(process.argv[2] ?? 5198)
@@ -45,6 +48,10 @@ createServer(async (req, res) => {
   let m
   if (req.method === 'GET' && pathname === '/health') {
     return send(res, 200, { status: 'ok', server: 'fake-backend' })
+  }
+  if (req.method === 'GET' && pathname === '/_fake/request') {
+    // What the proxy forwarded: the path it sent and the prefix header it added.
+    return send(res, 200, { path: pathname, forwardedPrefix: req.headers['x-forwarded-prefix'] ?? null })
   }
   if (req.method === 'PUT' && (m = pathname.match(/^\/_fake\/chat\/([^/]+)$/))) {
     const { batches } = await readJson(req)

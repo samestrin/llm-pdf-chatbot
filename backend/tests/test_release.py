@@ -270,3 +270,34 @@ def test_changelog_section_prints_usage_and_exits_2_without_a_version_or_with_to
     assert changelog_section.main([]) == 2
     assert changelog_section.main(["1", "2", "3"]) == 2
     assert capsys.readouterr().err.count("usage: changelog_section.py") == 2
+
+
+# v1.0.1 is not tagged yet: everything changed since 1.0.0 ships in its notes, so nothing
+# waits under Unreleased.
+FIXES_IN_1_0_1 = [
+    "X-Forwarded-Prefix: /api",  # the reference calls /api through the frontend
+    "375 px",  # the reference fits a phone
+    "chatbot's blue",  # the reference wears the app's accent
+    "application/x-ndjson",  # the spec declares the chat stream
+    "http://localhost:8080/api/docs",  # the guide links the running app
+    "capture:readme",  # the mocked capture no longer overwrites the live GIF
+    "per clause",  # the demo's aversive screen
+]
+
+
+def test_unreleased_reads_as_empty_only_when_it_is(tmp_path):
+    assert changelog_section.section(SAMPLE_CHANGELOG, "Unreleased") == "### Added\n\n- Next thing."
+    empty = SAMPLE_CHANGELOG.replace("### Added\n\n- Next thing.\n\n## [1.0.1]", "## [1.0.1]")
+    assert changelog_section.section(empty, "Unreleased") == ""
+
+
+def test_the_unreleased_section_is_empty_until_1_0_1_is_tagged():
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    assert "## [Unreleased]" in changelog
+    assert changelog_section.section(changelog, "Unreleased") == ""
+
+
+@pytest.mark.parametrize("fix", FIXES_IN_1_0_1)
+def test_the_1_0_1_release_notes_carry_the_fix(fix, capsys):
+    assert changelog_section.main([VERSION]) == 0
+    assert fix in capsys.readouterr().out

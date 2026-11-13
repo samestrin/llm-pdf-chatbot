@@ -52,14 +52,25 @@ The browser tests start their own Vite dev server and never call a real backend:
 
 ## README images
 
-The screenshots and the GIF in `docs/img/` (`upload.png`, `answer.png`, `citation.png`, `dark.png`, `phone.png`, `demo.gif`) are generated, not drawn by hand:
+The images in `docs/img/` are generated, not drawn by hand, by two commands.
+
+The screenshots (the PNGs: `upload.png`, `answer.png`, `citation.png`, `dark.png`, `phone.png`) come from `npm run capture:readme`:
 
 ```bash
 cd frontend
 npm run capture:readme
 ```
 
-It runs `frontend/e2e/capture/` against the same fixture-backed page and servers as the browser tests, and writes the files to `docs/img/`. `frontend/e2e/readme-images.spec.ts` checks each file exists and is at most 5 MB. Run it again when the page changes in a way the images show.
+It runs `frontend/e2e/capture/` against the same fixture-backed page and servers as the browser tests, and writes the PNGs to `docs/img/`. Run it again when the page changes in a way the images show; it never touches the GIF.
+
+The demo GIF (`demo.gif`) is a real session, recorded by `npm run capture:live` against a running instance with real models:
+
+```bash
+cd frontend
+LIVE_URL=http://localhost:8080 npm run capture:live
+```
+
+It runs `frontend/e2e/live/` and needs a collection already ingested (`LIVE_COLLECTION`, default `dog-training`). The capture stops if a claim recommends an aversive training method or if the frames differ in size. `frontend/e2e/readme-images.spec.ts` checks each image exists and is at most 5 MB.
 
 ## Verify the stack
 
@@ -67,7 +78,7 @@ It runs `frontend/e2e/capture/` against the same fixture-backed page and servers
 ./scripts/compose-smoke.sh
 ```
 
-Builds the full stack on throwaway ports, then checks the backend health endpoint, the pgvector extension, that the frontend serves its page, and that the frontend proxies `/api` to the backend. It needs Docker, `curl` and `jq`, and no model key: `docker-compose.smoke.yml` adds a fake OpenAI-compatible model (`scripts/fake-llm/`) and points the backend at it. With the fake, the smoke uploads the sample PDF, asks a question it answers, prints the cited answer and checks it cites the sample's page; then it stops the fake, asks again and checks the answer fails with "the model endpoint is unreachable". The fake matches words, it does not read: never point a real stack at it.
+Builds the full stack on throwaway ports, then checks the backend health endpoint, the pgvector extension, that the frontend serves its page, and that the frontend proxies `/api` to the backend and tells it so: the spec served at `/api/openapi.json` names `/api` as its server, a call built from it reaches the backend, and the API reference at `/api/docs` loads its script. It needs Docker, `curl` and `jq`, and no model key: `docker-compose.smoke.yml` adds a fake OpenAI-compatible model (`scripts/fake-llm/`) and points the backend at it. With the fake, the smoke uploads the sample PDF, asks a question it answers, prints the cited answer and checks it cites the sample's page; then it stops the fake, asks again and checks the answer fails with "the model endpoint is unreachable". The fake matches words, it does not read: never point a real stack at it.
 
 The frontend's nginx forwards `/api` to the host `llm-pdf-chatbot-backend`: the backend's network alias in `docker-compose.yml` and its container name in `docker-compose.proxy.yml`. A compose file of your own that runs the frontend image needs that name on the backend too.
 
