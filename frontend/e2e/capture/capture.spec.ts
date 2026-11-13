@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url'
 import { json, SAMPLE_PDF_PATH, test } from '../fixtures'
 import { README_IMAGES } from '../readme-images'
 
-const OUT = fileURLToPath(new URL('../../../docs/img/', import.meta.url))
+// CAPTURE_OUT (a directory ending in `/`) redirects the images; e2e/capture-readme.spec.ts
+// runs this capture into a temporary directory with it.
+const OUT = process.env.CAPTURE_OUT ?? fileURLToPath(new URL('../../../docs/img/', import.meta.url))
 
 const ready = (id: string, filename: string, pages: number) => ({
   id,

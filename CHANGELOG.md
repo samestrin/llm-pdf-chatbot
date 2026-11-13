@@ -67,7 +67,8 @@ The 2026 rebuild: a FastAPI backend, a React frontend and Postgres with pgvector
 - The header mentions the backend only when it is down, and an answer shows its cost only when it is known.
 - Buttons have a solid primary colour in both themes and a distinct grey disabled style, instead of a faded one; the small Delete button in the documents list gets the same disabled surface instead of staying transparent.
 
-[Unreleased]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/samestrin/llm-pdf-chatbot/releases/tag/v1.0.0
 - The frontend's nginx forwards `/api` to `llm-pdf-chatbot-backend` instead of `backend`, a name no other app shares on a common Docker network; `docker-compose.yml` gives the backend that alias. A compose file of your own that runs the frontend image must give its backend that name.
 
