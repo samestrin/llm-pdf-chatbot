@@ -76,10 +76,5 @@ def test_docs_say_capture_live_makes_the_gif_and_capture_readme_the_pngs(page):
     assert re.search(r"capture:readme`[^.;]*\bPNGs?\b|\bPNGs?\b[^.;]*capture:readme`", text)
 
 
-def test_capture_readme_writes_no_gif():
-    capture = REPO / "frontend" / "e2e" / "capture"
-    sources = [p for p in capture.rglob("*.ts") if not p.name.endswith(".d.ts")]
-    assert sources
-    for p in sources:
-        text = p.read_text()
-        assert "README_IMAGES.gif" not in text and "demo.gif" not in text, p
+# That capture:readme leaves the GIF alone is checked by running it:
+# frontend/e2e/capture-readme.spec.ts.
