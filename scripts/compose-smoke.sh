@@ -2,7 +2,8 @@
 # Compose smoke test: build and start the whole stack with one `docker compose up`,
 # then check that the backend health check passes against Postgres, that pgvector
 # is installed, that the frontend serves the page, and that the frontend's nginx
-# proxies /api to the backend. With the fake model of docker-compose.smoke.yml
+# proxies /api to the backend and tells it so: the spec served through nginx names /api
+# as its server, and the API reference's calls built from it reach the backend. With the fake model of docker-compose.smoke.yml
 # (scripts/fake-llm/) in place of a real one, it then uploads the sample PDF, asks a
 # question the sample answers and checks the streamed answer cites the sample's page;
 # last, it stops the fake, asks again and checks the answer fails as unreachable.
@@ -82,6 +83,31 @@ proxied=$(curl -sSf "http://localhost:${FRONTEND_PORT}/api/health") \
   || fail "GET /api/health through the frontend failed"
 echo "$proxied"
 [ "$proxied" = '{"status":"ok"}' ] || fail "proxied /api/health body was $proxied"
+
+# The API reference calls the spec's server URL plus each path. Through nginx the spec must
+# name /api, and a call built that way must reach the backend; served directly it names none.
+echo "--- the API reference's spec through the frontend (nginx sends X-Forwarded-Prefix)"
+spec=$(curl -sSf "http://localhost:${FRONTEND_PORT}/api/openapi.json") \
+  || fail "GET /api/openapi.json through the frontend failed"
+servers=$(echo "$spec" | jq -c '.servers')
+echo "servers ${servers}"
+[ "$servers" = '[{"url":"/api"}]' ] || fail "the spec through the frontend names servers ${servers}, want [{\"url\":\"/api\"}]"
+server=$(echo "$spec" | jq -r '.servers[0].url')
+echo "$spec" | jq -e '.paths["/collections"].get' >/dev/null || fail "the spec has no GET /collections"
+collections=$(curl -sSf "http://localhost:${FRONTEND_PORT}${server}/collections") \
+  || fail "GET ${server}/collections through the frontend failed"
+echo "$collections" | jq -e 'type == "array"' >/dev/null \
+  || fail "GET ${server}/collections through the frontend was not the backend's list: ${collections}"
+echo "GET ${server}/collections reached the backend"
+direct=$(curl -sSf "http://localhost:${BACKEND_PORT}/openapi.json" | jq -c '.servers') \
+  || fail "GET /openapi.json on the backend failed"
+[ "$direct" = "null" ] || fail "the spec served directly names servers ${direct}, want none"
+# The page names its script by relative URL: docs/scalar.js, so /api/docs/scalar.js here.
+docs=$(curl -sSf "http://localhost:${FRONTEND_PORT}/api/docs") || fail "GET /api/docs through the frontend failed"
+echo "$docs" | grep -q 'src="docs/scalar.js"' || fail "/api/docs through the frontend is not the API reference"
+curl -sSf -o /dev/null "http://localhost:${FRONTEND_PORT}/api/docs/scalar.js" \
+  || fail "GET /api/docs/scalar.js through the frontend failed"
+echo "the API reference at /api/docs calls ${server}/..."
 
 # POST a question to the chat route and print its NDJSON events, one per line.
 ask() {
