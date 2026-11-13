@@ -357,34 +357,8 @@ def test_the_reference_routes_are_not_in_the_schema(client):
 # Scalar's "Test Request" and code samples call the spec's server URL plus the path; with no
 # server entry they call the page's origin plus the path. Behind the frontend the API is under
 # /api, so the spec served there must name /api, and the spec served directly must not.
-
-
-def nginx_api_location() -> dict[str, str]:
-    """The /api location of frontend/nginx.conf: its prefix, proxy_pass and the prefix header."""
-    conf = (REPO / "frontend" / "nginx.conf").read_text()
-    match = re.search(r"location\s+(/api/)\s*\{(.*?)\n\s*\}", conf, re.DOTALL)
-    assert match, "frontend/nginx.conf has no `location /api/` block"
-    body = match.group(2)
-    proxy_pass = re.search(r"^\s*proxy_pass\s+(\S+);", body, re.MULTILINE)
-    header = re.search(r"^\s*proxy_set_header\s+X-Forwarded-Prefix\s+(\S+);", body, re.MULTILINE)
-    assert proxy_pass, "the /api location has no proxy_pass"
-    assert header, "the /api location does not send X-Forwarded-Prefix"
-    return {
-        "location": match.group(1),
-        "proxy_pass": proxy_pass.group(1),
-        "prefix": header.group(1),
-    }
-
-
-def through_nginx(browser_path: str, location: dict[str, str]) -> str:
-    """The path the backend sees for a browser request, as nginx forwards it.
-
-    A proxy_pass with a URI part replaces the matched location prefix with that URI.
-    """
-    assert browser_path.startswith(location["location"]), f"{browser_path} misses nginx's /api/"
-    uri = urlparse(location["proxy_pass"]).path
-    assert uri, "proxy_pass has no URI part, so nginx would not strip /api"
-    return uri + browser_path[len(location["location"]) :]
+# That nginx and Vite's dev proxy strip /api and send X-Forwarded-Prefix is checked by running
+# them: nginx in scripts/compose-smoke.sh, the dev proxy in frontend/e2e/smoke.spec.ts.
 
 
 def concrete(path: str) -> str:
@@ -408,18 +382,13 @@ def routed(client, method: str, path: str) -> bool:
     )
 
 
-def test_the_spec_served_through_nginx_names_the_api_mount_point(client):
-    location = nginx_api_location()
-    spec = client.get("/openapi.json", headers={"X-Forwarded-Prefix": location["prefix"]}).json()
+def test_the_spec_served_behind_a_prefix_names_it_and_its_calls_reach_the_api(client):
+    # The proxy strips the server URL it named, so each call lands on the spec's own path.
+    spec = client.get("/openapi.json", headers={"X-Forwarded-Prefix": "/api"}).json()
     assert spec["servers"] == [{"url": "/api"}]
     assert operations(spec)
     for method, path in operations(spec):
-        browser_path = spec["servers"][0]["url"] + concrete(path)
-        backend_path = through_nginx(browser_path, location)
-        assert backend_path == concrete(path)
-        assert routed(client, method, backend_path), f"{method} {browser_path}"
-    health = through_nginx(spec["servers"][0]["url"] + "/health", location)
-    assert client.get(health).json() == {"status": "ok"}
+        assert routed(client, method, concrete(path)), f"{method} /api{path}"
 
 
 def test_the_spec_served_directly_names_no_server_so_scalar_uses_the_origin(client):
@@ -448,12 +417,6 @@ def test_a_prefix_that_is_not_a_plain_path_names_no_server(client, prefix):
 def test_the_specs_paths_are_the_same_through_nginx(client):
     spec = client.get("/openapi.json", headers={"X-Forwarded-Prefix": "/api"}).json()
     assert {p: sorted(ops) for p, ops in spec["paths"].items()} == SPEC_PATHS
-
-
-def test_the_vite_dev_proxy_sends_the_same_prefix():
-    # `npm run dev` serves /api/docs through Vite's proxy, which strips /api like nginx does.
-    config = (REPO / "frontend" / "vite.config.ts").read_text()
-    assert re.search(r"""['"]X-Forwarded-Prefix['"]\s*:\s*['"]/api['"]""", config)
 
 
 SOURCE_FIELDS = ["file", "package", "version", "url", "licence", "retrieved", "sha256"]
