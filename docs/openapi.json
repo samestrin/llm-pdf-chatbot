@@ -315,11 +315,9 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "One JSON event per line",
             "content": {
-              "application/json": {
-                "schema": {}
-              }
+              "application/x-ndjson": {}
             }
           },
           "422": {
