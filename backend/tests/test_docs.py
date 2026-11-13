@@ -53,7 +53,8 @@ def client():
 def test_api_guide_links_the_reference_and_spec_without_an_endpoint_table():
     guide = (REPO / "docs" / "api.md").read_text()
     first_paragraph = guide.split("\n\n")[1]
-    assert "[`/api/docs`](/api/docs)" in first_paragraph
+    # The running app's address: a root-relative link on GitHub goes to github.com/api/docs.
+    assert "[`/api/docs`](http://localhost:8080/api/docs)" in first_paragraph
     assert "localhost:8000/docs" not in first_paragraph
     assert "`/api/openapi.json`" in guide
     assert "[`docs/openapi.json`](openapi.json)" in guide
@@ -115,6 +116,29 @@ def test_readme_points_to_the_short_api_guide():
     assert "interactive reference" in readme
     assert "behaviour the spec does not carry" in readme
     assert readme.count("[docs/api.md](docs/api.md)") == 2
+
+
+# A Markdown link or HTML href that starts with one slash. GitHub resolves it against
+# github.com, not the app: `[x](/api/docs)` opens github.com/api/docs.
+ROOT_RELATIVE_LINK = re.compile(r"\]\((/(?!/)[^)\s]*)|href=[\"'](/(?!/)[^\"']*)")
+
+
+def root_relative_links(markdown: str) -> list[str]:
+    return [a or b for a, b in ROOT_RELATIVE_LINK.findall(markdown)]
+
+
+def test_root_relative_links_are_found():
+    sample = 'See [`/api/docs`](/api/docs), <a href="/x">x</a> and [guide](api.md).'
+    assert root_relative_links(sample) == ["/api/docs", "/x"]
+    good = "[`/api/docs`](http://localhost:8080/api/docs), [y](how-it-works.md#answers), [z](//h/p)"
+    assert root_relative_links(good) == []
+
+
+@pytest.mark.parametrize(
+    "page", ["README.md", *sorted(str(p.relative_to(REPO)) for p in (REPO / "docs").rglob("*.md"))]
+)
+def test_no_doc_links_root_relative(page):
+    assert root_relative_links((REPO / page).read_text()) == []
 
 
 class Tags(HTMLParser):
