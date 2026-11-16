@@ -32,6 +32,7 @@ SPEC_PATHS = {
     "/collections/{collection}": ["delete"],
     "/collections/{collection}/chat": ["post"],
     "/health": ["get"],
+    "/presets": ["get"],
 }
 
 # Hosts the page must never reach: a CDN, Scalar's font host, its request proxy or its own site.

@@ -11,7 +11,7 @@ import math
 import os
 import re
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import httpx
@@ -39,6 +39,24 @@ class LLMConfigError(LLMError):
     def __init__(self, setting: str, message: str):
         self.setting = setting
         super().__init__(message)
+
+
+class LLMCredentialsRequired(LLMConfigError):
+    """In a public demo the environment's endpoint is not used: a visitor action needs a
+    demo code or the visitor's own key (see `app.credentials`)."""
+
+    def __init__(self):
+        super().__init__(
+            "X-Demo-Code or X-Model-Key",
+            "PUBLIC_DEMO is on: a model call needs a demo code or a preset key",
+        )
+
+
+class NoEmbeddingModelError(LLMConfigError):
+    """The preset has no embedding model, so it cannot embed."""
+
+    def __init__(self):
+        super().__init__("X-Model-Preset", "this preset has no embedding model")
 
 
 class LLMConnectionError(LLMError):
@@ -89,13 +107,21 @@ class ChatResult:
     data: Any = None
 
 
+def public_demo(env: Mapping[str, str] | None = None) -> bool:
+    """Whether `PUBLIC_DEMO` is on: visitors bring a demo code or their own key."""
+    env = os.environ if env is None else env
+    return env.get("PUBLIC_DEMO", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class LLMConfig:
     base_url: str
-    api_key: str | None
+    # Out of the repr, so a logged config never shows it.
+    api_key: str | None = field(repr=False)
     fast_model: str
     reasoning_model: str
-    embedding_model: str
+    # `None` for a preset that has no embedding model; `embed` then refuses.
+    embedding_model: str | None
     timeout: float = DEFAULT_TIMEOUT_SECONDS
     # Prices of the fast model per million tokens; both set or both `None`.
     fast_price_in_per_mtok: float | None = None
@@ -104,6 +130,8 @@ class LLMConfig:
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMConfig":
         env = os.environ if env is None else env
+        if public_demo(env):
+            raise LLMCredentialsRequired()
 
         def required(name: str) -> str:
             value = env.get(name, "").strip()
@@ -241,7 +269,7 @@ class LLMClient:
                 if value == "[DONE]":
                     done = True
                     break
-                chunk = _stream_chunk(value)
+                chunk = _stream_chunk(value, self._redact)
                 if chunk.get("usage") is not None:
                     usage = chunk["usage"]
                 for choice in chunk.get("choices") or []:
@@ -258,7 +286,7 @@ class LLMClient:
                 f"model stream stalled for more than {self.config.timeout:g} s"
             ) from exc
         except httpx.TransportError as exc:
-            raise LLMStreamError(f"model stream broke off: {exc}") from exc
+            raise LLMStreamError(self._redact(f"model stream broke off: {exc}")) from exc
         finally:
             resp.close()
 
@@ -275,6 +303,8 @@ class LLMClient:
         """Return one vector per text, in input order, or raise an `LLMError`."""
         if not texts:
             return []
+        if self.config.embedding_model is None:
+            raise NoEmbeddingModelError()
 
         body = self._post("embeddings", {"model": self.config.embedding_model, "input": texts})
         data = body.get("data") if isinstance(body, dict) else None
@@ -299,6 +329,11 @@ class LLMClient:
                 raise LLMResponseError(f"embedding {index} is not a non-empty list of numbers")
             vectors[index] = [float(x) for x in vector]
         return vectors  # type: ignore[return-value]  # every slot was filled above
+
+    def _redact(self, text: str) -> str:
+        """`text` without this client's key: an endpoint can echo it in an error body."""
+        key = self.config.api_key
+        return text.replace(key, "[redacted]") if key else text
 
     def _model_name(self, model: ChatModel) -> str:
         if model == "fast":
@@ -361,7 +396,7 @@ class LLMClient:
                 f"model endpoint did not answer within {self.config.timeout:g} s"
             ) from exc
         except httpx.TransportError as exc:
-            raise LLMConnectionError(f"model endpoint unreachable: {exc}") from exc
+            raise LLMConnectionError(self._redact(f"model endpoint unreachable: {exc}")) from exc
         if not resp.is_success:
             try:
                 body = resp.read().decode(errors="replace")
@@ -369,7 +404,7 @@ class LLMClient:
                 body = ""
             finally:
                 resp.close()
-            raise LLMHTTPError(resp.status_code, body)
+            raise LLMHTTPError(resp.status_code, self._redact(body))
         return resp
 
     def _post(self, path: str, payload: dict[str, Any]) -> Any:
@@ -380,10 +415,10 @@ class LLMClient:
                 f"model endpoint did not answer within {self.config.timeout:g} s"
             ) from exc
         except httpx.TransportError as exc:
-            raise LLMConnectionError(f"model endpoint unreachable: {exc}") from exc
+            raise LLMConnectionError(self._redact(f"model endpoint unreachable: {exc}")) from exc
 
         if not resp.is_success:
-            raise LLMHTTPError(resp.status_code, resp.text)
+            raise LLMHTTPError(resp.status_code, self._redact(resp.text))
         if not resp.content.strip():
             raise LLMResponseError("model endpoint returned an empty body")
         try:
@@ -421,7 +456,7 @@ class ChatStream:
         self._items.close()  # type: ignore[attr-defined]  # a generator
 
 
-def _stream_chunk(value: str) -> dict[str, Any]:
+def _stream_chunk(value: str, redact: Callable[[str], str]) -> dict[str, Any]:
     try:
         chunk = json.loads(value)
     except ValueError as exc:
@@ -429,7 +464,8 @@ def _stream_chunk(value: str) -> dict[str, Any]:
     if not isinstance(chunk, dict):
         raise LLMStreamError("stream chunk is not an object")
     if "error" in chunk:
-        raise LLMStreamError(f"model endpoint reported an error mid-stream: {chunk['error']}"[:500])
+        message = redact(f"model endpoint reported an error mid-stream: {chunk['error']}")
+        raise LLMStreamError(message[:500])
     if not isinstance(chunk.get("choices") or [], list):
         raise LLMStreamError("stream chunk choices is not a list")
     return chunk

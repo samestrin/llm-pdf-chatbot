@@ -9,6 +9,7 @@ import json
 import logging
 import socket
 from contextlib import ExitStack
+from typing import Annotated
 
 import pytest
 from fastapi import Depends, FastAPI, Request
@@ -75,7 +76,7 @@ def probe_app() -> FastAPI:
     app = FastAPI()
 
     @app.get("/probe")
-    def probe(request: Request, creds: Credentials | None = Depends(request_credentials)):
+    def probe(request: Request, creds: Annotated[Credentials | None, Depends(request_credentials)]):
         if creds is None:
             return {"credentials": None}
         client = client_for(creds)
@@ -324,7 +325,7 @@ def test_get_presets_lists_metadata_only(monkeypatch):
         "env-llm.internal",
         "sk-env-owner-key",
         "http",
-        "key\":",
+        'key":',
         "api_key",
         "base_url",
     ]:
@@ -421,7 +422,7 @@ def echo(status: int, kind: str = "json"):
 
 def mid_stream_error(server: FakeServer):
     auth = server.requests[-1]["auth"]
-    body = sse(delta("{\"claims\""), {"error": {"message": f"bad key {auth}"}}, done=False)
+    body = sse(delta('{"claims"'), {"error": {"message": f"bad key {auth}"}}, done=False)
     return 200, body, "text/event-stream"
 
 
@@ -483,7 +484,7 @@ EMBED_CASES = {
     ),
     "401 echo json": echo(401),
     "500 echo text": echo(500, "text"),
-    "malformed": lambda payload: (200, b"{\"data\": 3}", "application/json"),
+    "malformed": lambda payload: (200, b'{"data": 3}', "application/json"),
 }
 
 

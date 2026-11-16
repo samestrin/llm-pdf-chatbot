@@ -4,6 +4,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Model presets for the public demo: `backend/app/presets.json` lists the providers a visitor may use (OpenAI, OpenRouter, Synthetic, Alibaba and the demo gateway), and `GET /presets` gives the page their ids, labels and models, never a base URL, gateway or key. A request names its model with `X-Model-Preset` and `X-Model-Key`, or `X-Demo-Code` (sent to `DEMO_GATEWAY_URL`); an unknown preset or a bad combination is a 400 that echoes no header value, and no base URL is taken from a request. With `PUBLIC_DEMO=true` the `LLM_*` endpoint is not used for a visitor's model call. A model client takes its own key out of any error body an endpoint sends back.
+
 ### Changed
 
 - The OpenAPI spec (`/api/openapi.json`, `docs/openapi.json`) gives a response schema for the four operations that had none: the chat stream's line is `ChatEvent`, a `oneOf` on `type` over `StepEvent`, `ClaimEvent`, `RefusalEvent`, `ErrorEvent` and `DoneEvent`; the PDF download is `application/pdf` binary; the two deletes are 204 with no body, and their 404 (and the collection's 409) is `{"detail": "..."}`. The backend builds each chat event from the same models, and what the API sends is unchanged. `docs/api.md` names the event schemas.

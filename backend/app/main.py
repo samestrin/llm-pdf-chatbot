@@ -3,16 +3,19 @@ import re
 import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app import answer, documents
+from app.credentials import PRESETS, public_presets, request_credentials
 from app.db import init_db
 from app.ingest import Embedder, IngestWorker, batch_size_from_env
-from app.llm import LLMClient
+from app.llm import LLMClient, public_demo
 
 DEFAULT_DATABASE_URL = "sqlite:///./app.db"
 # The API reference page and the vendored Scalar script it loads (see static/SOURCES.md).
@@ -20,6 +23,23 @@ STATIC_DIR = Path(__file__).parent / "static"
 # A path prefix the app is served under, as the frontend's nginx and Vite's dev proxy send it
 # in X-Forwarded-Prefix: one or more plain segments, no scheme, host, query or trailing slash.
 FORWARDED_PREFIX = re.compile(r"(/[A-Za-z0-9._~-]+)+")
+
+
+class PresetInfo(BaseModel):
+    """What the page may know of a preset: no base URL, gateway or key."""
+
+    id: str
+    label: str
+    kind: Literal["key", "demo"]
+    chat_model: str
+    # `null` when the preset cannot embed: it cannot take uploads.
+    embedding_model: str | None
+
+
+class PresetList(BaseModel):
+    # Whether every model call needs a demo code or the visitor's own key.
+    public_demo: bool
+    presets: list[PresetInfo]
 
 
 def make_engine() -> Engine:
@@ -60,11 +80,21 @@ def create_app(
     app.state.limits = documents.Limits.from_env()
     app.state.embedder = embedder
     app.state.llm = llm
+    app.state.presets = PRESETS
     app.state.worker = IngestWorker(
         app.state.engine, app.state.limits, embedder, batch_size=batch_size_from_env()
     )
-    app.include_router(documents.router)
-    app.include_router(answer.router)
+    # Every route reads the model headers, so a bad preset or key is a 400 before any work.
+    credentials = [Depends(request_credentials)]
+    app.include_router(documents.router, dependencies=credentials)
+    app.include_router(answer.router, dependencies=credentials)
+
+    @app.get("/presets", summary="The model presets a visitor can pick")
+    def presets() -> PresetList:
+        return PresetList(
+            public_demo=public_demo(),
+            presets=[PresetInfo(**p) for p in public_presets(app.state.presets)],
+        )
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -1,0 +1,44 @@
+{
+  "presets": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "kind": "key",
+      "base_url": "https://api.openai.com/v1",
+      "chat_model": "gpt-5-nano",
+      "embedding_model": "text-embedding-3-small"
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "kind": "key",
+      "base_url": "https://openrouter.ai/api/v1",
+      "chat_model": "qwen/qwen3.7-flash",
+      "embedding_model": "thenlper/gte-base"
+    },
+    {
+      "id": "synthetic",
+      "label": "Synthetic",
+      "kind": "key",
+      "base_url": "https://api.synthetic.new/openai/v1",
+      "chat_model": "hf:zai-org/GLM-5.3-Flash",
+      "embedding_model": null
+    },
+    {
+      "id": "alibaba",
+      "label": "Alibaba (DashScope intl)",
+      "kind": "key",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "chat_model": "qwen-flash",
+      "embedding_model": "text-embedding-v4"
+    },
+    {
+      "id": "demo",
+      "label": "Demo code",
+      "kind": "demo",
+      "base_url": null,
+      "chat_model": "gpt-5-nano",
+      "embedding_model": "text-embedding-3-small"
+    }
+  ]
+}
