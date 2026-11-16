@@ -527,7 +527,7 @@ def test_every_ndjson_example_in_the_api_guide_is_a_chat_event_of_the_spec():
     guide = (REPO / "docs" / "api.md").read_text()
     block = re.search(r"```ndjson\n(.*?)\n```", guide, re.DOTALL).group(1)
     for line in block.splitlines():
-        assert json.dumps(ChatEvent.model_validate_json(line, strict=True).model_dump()) == line
+        assert ChatEvent.model_validate_json(line, strict=True).model_dump() == json.loads(line)
 
 
 def test_the_api_guide_names_the_chat_event_schema_and_no_longer_says_openapi_cannot():
