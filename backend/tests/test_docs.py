@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from starlette.routing import Match
 
+from app.answer import ChatEvent
 from app.main import create_app
 
 REPO = Path(__file__).resolve().parents[2]
@@ -520,3 +521,24 @@ def test_a_bundle_missing_from_the_record_fails(tmp_path):
     static, sources = write_sources(tmp_path)
     sources.write_text("# Vendored sources\n\nno table\n")
     assert vendored_problems(static, sources) == ["scalar.js: not listed in SOURCES.md"]
+
+
+def test_every_ndjson_example_in_the_api_guide_is_a_chat_event_of_the_spec():
+    guide = (REPO / "docs" / "api.md").read_text()
+    block = re.search(r"```ndjson\n(.*?)\n```", guide, re.DOTALL).group(1)
+    for line in block.splitlines():
+        assert json.dumps(ChatEvent.model_validate_json(line, strict=True).model_dump()) == line
+
+
+def test_the_api_guide_names_the_chat_event_schema_and_no_longer_says_openapi_cannot():
+    guide = (REPO / "docs" / "api.md").read_text()
+    assert "OpenAPI cannot express" not in guide
+    for name in [
+        "`ChatEvent`",
+        "`StepEvent`",
+        "`ClaimEvent`",
+        "`RefusalEvent`",
+        "`ErrorEvent`",
+        "`DoneEvent`",
+    ]:
+        assert name in guide, name

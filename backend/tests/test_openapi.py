@@ -3,6 +3,7 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
@@ -67,3 +68,89 @@ def test_the_committed_spec_declares_the_chat_stream_as_ndjson_only():
     content = chat["post"]["responses"]["200"]["content"]
     assert list(content) == ["application/x-ndjson"]
     assert "application/json" not in content
+
+
+def served_spec() -> dict:
+    """The spec as the frontend serves it at /api/openapi.json (nginx strips /api and says so)."""
+    client = TestClient(create_app(create_engine("sqlite://")))
+    resp = client.get("/openapi.json", headers={"X-Forwarded-Prefix": "/api"})
+    assert resp.json()["servers"] == [{"url": "/api"}]
+    return resp.json()
+
+
+def resolve(spec: dict, schema: dict) -> dict:
+    if "$ref" in schema:
+        return spec["components"]["schemas"][schema["$ref"].rsplit("/", 1)[1]]
+    return schema
+
+
+def test_the_chat_stream_declares_its_events_as_a_oneof_on_type():
+    spec = served_spec()
+    response = spec["paths"]["/collections/{collection}/chat"]["post"]["responses"]["200"]
+    stream = response["content"]["application/x-ndjson"]
+    # OpenAPI 3.1 has no item schema for a stream: the schema is one line's, and says so.
+    assert spec["openapi"].startswith("3.1")
+    event = resolve(spec, stream["schema"])
+    assert "one line" in event["description"]
+    assert event["discriminator"]["propertyName"] == "type"
+    kinds = {
+        kind: resolve(spec, {"$ref": ref})
+        for kind, ref in event["discriminator"]["mapping"].items()
+    }
+    assert sorted(kinds) == ["claim", "done", "error", "refusal", "step"]
+    assert sorted(r["$ref"] for r in event["oneOf"]) == sorted(
+        event["discriminator"]["mapping"].values()
+    )
+    fields = {
+        "step": ["type", "question", "pages"],
+        "claim": ["type", "text", "document", "page", "chunk_id", "quote"],
+        "refusal": ["type", "passages"],
+        "error": ["type", "message"],
+        "done": ["type", "mode", "model", "cost"],
+    }
+    for kind, schema in kinds.items():
+        assert list(schema["properties"]) == fields[kind], kind
+        assert sorted(schema["required"]) == sorted(fields[kind]), kind
+        assert schema["properties"]["type"]["const"] == kind
+        assert schema["additionalProperties"] is False
+
+
+def test_the_pdf_download_is_a_binary_pdf():
+    op = served_spec()["paths"]["/documents/{document_id}/pdf"]["get"]
+    content = op["responses"]["200"]["content"]
+    assert content == {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}
+    assert "404" in op["responses"]
+
+
+@pytest.mark.parametrize(
+    "path, errors",
+    [
+        ("/documents/{document_id}", {"404": "document not found"}),
+        (
+            "/collections/{collection}",
+            {"404": "collection not found", "409": "collection is not empty"},
+        ),
+    ],
+)
+def test_a_delete_is_204_with_no_body_and_its_errors_have_a_detail_body(path, errors):
+    spec = served_spec()
+    responses = spec["paths"][path]["delete"]["responses"]
+    assert "content" not in responses["204"]
+    assert [s for s in responses if s.startswith("2")] == ["204"]
+    for status, detail in errors.items():
+        assert detail in responses[status]["description"]
+        body = resolve(spec, responses[status]["content"]["application/json"]["schema"])
+        assert body["properties"]["detail"]["type"] == "string"
+        assert body["required"] == ["detail"]
+
+
+def test_each_of_the_four_operations_has_a_response_schema():
+    spec = served_spec()
+    chat = spec["paths"]["/collections/{collection}/chat"]["post"]["responses"]["200"]
+    pdf = spec["paths"]["/documents/{document_id}/pdf"]["get"]["responses"]["200"]
+    assert chat["content"]["application/x-ndjson"]["schema"]
+    assert pdf["content"]["application/pdf"]["schema"]
+    for path in ["/documents/{document_id}", "/collections/{collection}"]:
+        responses = spec["paths"][path]["delete"]["responses"]
+        assert responses["204"]["description"] == "Deleted; no body"
+        assert responses["404"]["content"]["application/json"]["schema"]
