@@ -9,6 +9,7 @@ from test_answer import claim, post_chat, stream_json, types
 from test_llm import USAGE, FakeServer, chat_reply, make_client
 from test_retrieval import PAPERS, TopicEmbedder, add_document
 
+from app.answer import ChatEvent
 from app.db import documents, init_db
 from app.deep import (
     DEFAULT_DEEP_MAX_SUBQUESTIONS,
@@ -138,6 +139,19 @@ def test_deep_mode_cites_both_documents_of_a_comparison(engine, server):
     ]
     assert events[2]["quote"] == REPORT_2023
     assert events[-1] == {"type": "done", "mode": "deep", "model": "big", "cost": None}
+
+
+def test_every_line_of_a_deep_answer_is_a_chat_event_of_the_spec(engine, server):
+    two_reports(engine)
+    server.responder = deep_model()
+
+    _, events = deep(engine, server)
+
+    lines = [json.dumps(event) for event in events]
+    kinds = [ChatEvent.model_validate_json(line, strict=True).root.type for line in lines]
+    assert kinds == ["step", "step", "claim", "claim", "done"]
+    for line in lines:
+        assert json.dumps(ChatEvent.model_validate_json(line).model_dump()) == line
 
 
 def test_each_step_is_a_sub_question_and_the_pages_it_retrieved(engine, server):

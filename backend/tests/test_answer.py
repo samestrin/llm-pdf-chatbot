@@ -22,6 +22,7 @@ from app.answer import (
     DEFAULT_CHAT_HISTORY_TURNS,
     DEFAULT_REFUSAL_MIN_KEYWORD_COVERAGE,
     DEFAULT_REFUSAL_MIN_SIMILARITY,
+    ChatEvent,
     HistoryConfigError,
     RefusalConfigError,
     Turn,
@@ -576,6 +577,28 @@ def test_chat_route_streams_claims_from_retrieved_chunks(engine, server):
     assert events[0]["page"] == 2
     assert events[0]["quote"] == "retreated forty metres"
     llm.close()
+
+
+def test_every_line_the_chat_route_streams_is_a_chat_event_of_the_spec(engine, server):
+    add_document(engine, "papers", PAPERS)
+    server.responder = lambda request: (
+        200,
+        b"".join(stream_json({"claims": [glacier_claim_for(request)]})),
+        "text/event-stream",
+    )
+    llm = make_client(server)
+    with TestClient(create_app(engine, embedder=TopicEmbedder(), llm=llm)) as client:
+        question = {"question": "How far did the glacier retreat?"}
+        with client.stream("POST", "/collections/papers/chat", json=question) as resp:
+            lines = list(resp.iter_lines())
+    llm.close()
+
+    assert [ChatEvent.model_validate_json(line, strict=True).root.type for line in lines] == [
+        "claim",
+        "done",
+    ]
+    for line in lines:
+        assert json.dumps(ChatEvent.model_validate_json(line).model_dump()) == line
 
 
 def test_chat_route_does_not_cite_a_chunk_whose_page_text_changed(engine, server):

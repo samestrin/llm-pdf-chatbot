@@ -143,9 +143,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "The PDF",
             "content": {
-              "application/pdf": {}
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`document not found`, or `file not found` when its file is gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              }
             }
           },
           "422": {
@@ -230,7 +245,17 @@
         ],
         "responses": {
           "204": {
-            "description": "Successful Response"
+            "description": "Deleted; no body"
+          },
+          "404": {
+            "description": "`document not found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -265,13 +290,27 @@
         ],
         "responses": {
           "204": {
-            "description": "Successful Response"
+            "description": "Deleted; no body"
           },
           "404": {
-            "description": "No such collection"
+            "description": "`collection not found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Not empty"
+            "description": "`collection is not empty`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -315,9 +354,14 @@
         },
         "responses": {
           "200": {
-            "description": "One JSON event per line",
+            "description": "One JSON event per line; each line is a `ChatEvent`",
             "content": {
-              "application/x-ndjson": {}
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "$ref": "#/components/schemas/ChatEvent"
+                }
+              }
             }
           },
           "422": {
@@ -372,6 +416,37 @@
         ],
         "title": "Body_upload_document_collections__collection__documents_post"
       },
+      "ChatEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/StepEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ClaimEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RefusalEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ErrorEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DoneEvent"
+          }
+        ],
+        "title": "ChatEvent",
+        "description": "One line of the chat stream: a JSON object whose `type` says which event it is.\nThe stream is `application/x-ndjson`, and this is the schema of one line, not of the\nwhole body.",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "claim": "#/components/schemas/ClaimEvent",
+            "done": "#/components/schemas/DoneEvent",
+            "error": "#/components/schemas/ErrorEvent",
+            "refusal": "#/components/schemas/RefusalEvent",
+            "step": "#/components/schemas/StepEvent"
+          }
+        }
+      },
       "ChatRequest": {
         "properties": {
           "question": {
@@ -402,6 +477,152 @@
           "question"
         ],
         "title": "ChatRequest"
+      },
+      "ClaimEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "claim",
+            "title": "Type",
+            "default": "claim"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "text",
+          "document",
+          "page",
+          "chunk_id",
+          "quote"
+        ],
+        "title": "ClaimEvent",
+        "description": "One claim whose citation checked out; `quote` is the matching text on the page."
+      },
+      "DocumentRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "filename"
+        ],
+        "title": "DocumentRef"
+      },
+      "DoneEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "done",
+            "title": "Type",
+            "default": "done"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "deep"
+            ],
+            "title": "Mode"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "mode",
+          "model",
+          "cost"
+        ],
+        "title": "DoneEvent",
+        "description": "The answer is complete. `cost` is null when unknown, never 0 as a stand-in."
+      },
+      "ErrorDetail": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorDetail",
+        "description": "The body of a 404 or 409: FastAPI's `HTTPException` sends its detail as this."
+      },
+      "ErrorEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "error",
+            "title": "Type",
+            "default": "error"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "message"
+        ],
+        "title": "ErrorEvent",
+        "description": "The answer failed, possibly after claims were sent; nothing follows it."
       },
       "HTTPValidationError": {
         "properties": {
@@ -434,6 +655,107 @@
           "answer"
         ],
         "title": "HistoryTurn"
+      },
+      "RefusalEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "refusal",
+            "title": "Type",
+            "default": "refusal"
+          },
+          "passages": {
+            "items": {
+              "$ref": "#/components/schemas/RefusalPassage"
+            },
+            "type": "array",
+            "title": "Passages"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "passages"
+        ],
+        "title": "RefusalEvent",
+        "description": "No answer: the question is off topic or no claim checked out; the closest passages."
+      },
+      "RefusalPassage": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document",
+          "page",
+          "chunk_id",
+          "text"
+        ],
+        "title": "RefusalPassage"
+      },
+      "StepEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "step",
+            "title": "Type",
+            "default": "step"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/StepPage"
+            },
+            "type": "array",
+            "title": "Pages"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "question",
+          "pages"
+        ],
+        "title": "StepEvent",
+        "description": "Deep mode only: one sub-question and each page it retrieved, once."
+      },
+      "StepPage": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document",
+          "page"
+        ],
+        "title": "StepPage"
       },
       "ValidationError": {
         "properties": {

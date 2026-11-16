@@ -11,10 +11,12 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from app.answer import (
     ANSWER_SCHEMA,
     DEFAULT_REFUSAL_MIN_SIMILARITY,
+    ChatEvent,
     _error,
     answer_events,
     build_messages,
@@ -212,3 +214,28 @@ def test_the_smoke_expects_the_backends_own_unreachable_message():
     message = _error(LLMConnectionError("connection refused"))["message"]
     assert expected == "the model endpoint is unreachable"
     assert expected in message
+
+
+def lines_of(events) -> list[str]:
+    """The lines the chat route sends for `events`."""
+    return [json.dumps(event) for event in events]
+
+
+@pytest.mark.parametrize("question", [QUESTION, "Who painted the ceiling?"])
+def test_every_line_of_an_answer_or_refusal_is_a_chat_event_of_the_spec(llm, question):
+    events = answer_events(llm, question, sample_passages(), {"doc": "sample.pdf"}, resolve)
+    for line in lines_of(events):
+        event = ChatEvent.model_validate_json(line, strict=True)
+        # The model writes the line back byte for byte: the schema is what the route sends.
+        assert json.dumps(event.model_dump()) == line
+
+
+def test_an_error_line_is_a_chat_event_of_the_spec():
+    [line] = lines_of([_error(LLMConnectionError("refused"))])
+    assert ChatEvent.model_validate_json(line, strict=True).root.type == "error"
+
+
+def test_a_line_with_a_field_the_spec_lacks_is_not_a_chat_event():
+    line = json.dumps({"type": "error", "message": "x", "detail": "y"})
+    with pytest.raises(ValidationError):
+        ChatEvent.model_validate_json(line, strict=True)

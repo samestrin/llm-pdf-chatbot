@@ -21,7 +21,7 @@ Through the frontend, nginx tells the backend its `/api` prefix (`X-Forwarded-Pr
 
 ### NDJSON chat stream
 
-OpenAPI cannot express the sequence of JSON objects streamed by `POST /api/collections/{collection}/chat`. The response is `application/x-ndjson`, one event per line. These are all the event types in `frontend/src/api.ts`'s `ChatEvent`, with one example line each:
+`POST /api/collections/{collection}/chat` answers with `application/x-ndjson`: one JSON event per line. The spec gives the schema of one line, `ChatEvent`, a `oneOf` on `type` over `StepEvent`, `ClaimEvent`, `RefusalEvent`, `ErrorEvent` and `DoneEvent`; OpenAPI 3.1 has no schema for the stream as a whole, so the order of the events is described here. These are all the event types, the same as `frontend/src/api.ts`'s `ChatEvent`, with one example line each:
 
 ```ndjson
 {"type":"step","question":"What is the notice period?","pages":[{"document":{"id":"doc-1","filename":"lease.pdf"},"page":3}]}

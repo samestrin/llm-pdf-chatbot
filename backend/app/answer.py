@@ -68,7 +68,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Request
 from fastapi import Path as PathParam
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 from sqlalchemy import Engine, select
 
 from app.citation import find_quote
@@ -338,7 +338,7 @@ def chat_events(
             return
         if _off_topic(min_similarity, min_keyword_coverage, found):
             yield _refusal(found.passages, filenames)
-            yield {"type": "done", "mode": mode, "model": _model(llm, mode), "cost": None}
+            yield _done(mode, _model(llm, mode), None)
             return
         resolve = partial(resolve_offset, engine)
         yield from answer_events(
@@ -393,7 +393,7 @@ def _deep_events(
         if not answerable:
             yield _refusal(found_passages, filenames)
             # Only the plan was asked for: its cost is the run's.
-            yield {"type": "done", "mode": "deep", "model": planned.model, "cost": planned.cost}
+            yield _done("deep", planned.model, planned.cost)
             return
         citations = _Citations(partial(resolve_offset, engine))
         yield from _deep_answer(
@@ -437,7 +437,7 @@ def _deep_answer(
         yield _refusal(passages, filenames)
     costs = (planned.cost, result.cost)
     cost = None if None in costs else sum(costs)
-    yield {"type": "done", "mode": "deep", "model": result.model, "cost": cost}
+    yield _done("deep", result.model, cost)
 
 
 def _step(
@@ -449,10 +449,104 @@ def _step(
         if (p.document_id, p.page) not in seen:
             seen.add((p.document_id, p.page))
             pages.append({"document": _document(p, filenames), "page": p.page})
-    return {"type": "step", "question": sub_question, "pages": pages}
+    return StepEvent(question=sub_question, pages=pages).model_dump()
 
 
 router = APIRouter()
+
+
+# --- The events of the chat stream, one JSON object per line ---
+# Each event is dumped to a dict in field order, so the line the route sends is the same
+# as when the events were written as dicts by hand. `extra="forbid"` puts
+# `additionalProperties: false` in the spec: a line holds these fields and no others.
+
+
+class _Event(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_serialization_defaults_required=True)
+
+
+class DocumentRef(_Event):
+    id: str
+    # None when the document was deleted while the answer was being written.
+    filename: str | None
+
+
+class StepPage(_Event):
+    document: DocumentRef
+    page: int
+
+
+class StepEvent(_Event):
+    """Deep mode only: one sub-question and each page it retrieved, once."""
+
+    type: Literal["step"] = "step"
+    question: str
+    pages: list[StepPage]
+
+
+class ClaimEvent(_Event):
+    """One claim whose citation checked out; `quote` is the matching text on the page."""
+
+    type: Literal["claim"] = "claim"
+    text: str
+    document: DocumentRef
+    page: int
+    chunk_id: str
+    quote: str
+
+
+class RefusalPassage(_Event):
+    document: DocumentRef
+    page: int
+    chunk_id: str
+    text: str
+
+
+class RefusalEvent(_Event):
+    """No answer: the question is off topic or no claim checked out; the closest passages."""
+
+    type: Literal["refusal"] = "refusal"
+    passages: list[RefusalPassage]
+
+
+class ErrorEvent(_Event):
+    """The answer failed, possibly after claims were sent; nothing follows it."""
+
+    type: Literal["error"] = "error"
+    message: str
+
+
+class DoneEvent(_Event):
+    """The answer is complete. `cost` is null when unknown, never 0 as a stand-in."""
+
+    type: Literal["done"] = "done"
+    mode: AnswerMode
+    model: str
+    cost: float | None
+
+
+class ChatEvent(
+    RootModel[
+        Annotated[
+            StepEvent | ClaimEvent | RefusalEvent | ErrorEvent | DoneEvent,
+            Field(discriminator="type"),
+        ]
+    ]
+):
+    """One line of the chat stream: a JSON object whose `type` says which event it is.
+    The stream is `application/x-ndjson`, and this is the schema of one line, not of the
+    whole body."""
+
+
+class NDJSONResponse(StreamingResponse):
+    """A stream of JSON lines; as the route's response class it puts the response model's
+    schema under this media type in the spec."""
+
+    media_type = "application/x-ndjson"
+
+
+def _done(mode: AnswerMode, model: str, cost: float | None) -> dict[str, Any]:
+    return DoneEvent(mode=mode, model=model, cost=cost).model_dump()
 
 
 class HistoryTurn(BaseModel):
@@ -478,16 +572,19 @@ class ChatRequest(BaseModel):
 @router.post(
     "/collections/{collection}/chat",
     summary="Answer a question, streamed as NDJSON",
-    response_class=StreamingResponse,
+    response_class=NDJSONResponse,
     responses={
-        200: {"description": "One JSON event per line", "content": {"application/x-ndjson": {}}}
+        200: {
+            "description": "One JSON event per line; each line is a `ChatEvent`",
+            "model": ChatEvent,
+        }
     },
 )
 def chat(
     collection: Annotated[str, PathParam(min_length=1, max_length=200)],
     body: ChatRequest,
     request: Request,
-) -> StreamingResponse:
+) -> NDJSONResponse:
     state = request.app.state
     events = chat_events(
         state.engine,
@@ -499,7 +596,7 @@ def chat(
         embedder=state.embedder,
     )
     lines = (json.dumps(event) + "\n" for event in events)
-    return StreamingResponse(lines, media_type="application/x-ndjson")
+    return NDJSONResponse(lines)
 
 
 def _answer(
@@ -545,7 +642,7 @@ def _answer(
         model, cost = result.model, result.cost
     if not shown:
         yield _refusal(passages, filenames)
-    yield {"type": "done", "mode": mode, "model": model, "cost": cost}
+    yield _done(mode, model, cost)
 
 
 def _claim_event(
@@ -568,14 +665,13 @@ def _claim_event(
     on_page = citations.quote_on_page(p, quote)
     if on_page is None:
         return None
-    return {
-        "type": "claim",
-        "text": text,
-        "document": _document(p, filenames),
-        "page": p.page,
-        "chunk_id": str(p.chunk_id),
-        "quote": on_page,
-    }
+    return ClaimEvent(
+        text=text,
+        document=_document(p, filenames),
+        page=p.page,
+        chunk_id=str(p.chunk_id),
+        quote=on_page,
+    ).model_dump()
 
 
 class _Citations:
@@ -608,18 +704,17 @@ class _Citations:
 
 
 def _refusal(passages: Iterable[Passage], filenames: Mapping[str, str]) -> dict[str, Any]:
-    return {
-        "type": "refusal",
-        "passages": [
-            {
-                "document": _document(p, filenames),
-                "page": p.page,
-                "chunk_id": str(p.chunk_id),
-                "text": p.text,
-            }
+    return RefusalEvent(
+        passages=[
+            RefusalPassage(
+                document=_document(p, filenames),
+                page=p.page,
+                chunk_id=str(p.chunk_id),
+                text=p.text,
+            )
             for p in passages
         ],
-    }
+    ).model_dump()
 
 
 def _model(llm: LLMClient, mode: AnswerMode) -> str:
@@ -637,13 +732,13 @@ def _error(exc: Exception) -> dict[str, str]:
     reason = _client_reason(exc)
     if reason is None:
         log.exception("answer failed", exc_info=exc)
-        return {"type": "error", "message": "the answer failed: internal error"}
+        return ErrorEvent(message="the answer failed: internal error").model_dump()
     body = getattr(exc, "body", None)
     if body:
         log.warning("answer failed: %s; body: %s", exc, body[:500])
     else:
         log.warning("answer failed: %s", exc)
-    return {"type": "error", "message": f"the answer failed: {reason}"}
+    return ErrorEvent(message=f"the answer failed: {reason}").model_dump()
 
 
 def _client_reason(exc: Exception) -> str | None:

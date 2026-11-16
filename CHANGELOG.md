@@ -4,6 +4,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The OpenAPI spec (`/api/openapi.json`, `docs/openapi.json`) gives a response schema for the four operations that had none: the chat stream's line is `ChatEvent`, a `oneOf` on `type` over `StepEvent`, `ClaimEvent`, `RefusalEvent`, `ErrorEvent` and `DoneEvent`; the PDF download is `application/pdf` binary; the two deletes are 204 with no body, and their 404 (and the collection's 409) is `{"detail": "..."}`. The backend builds each chat event from the same models, and what the API sends is unchanged. `docs/api.md` names the event schemas.
+
 ## [1.0.1] - 2026-11-12
 
 ### Added

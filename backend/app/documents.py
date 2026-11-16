@@ -19,6 +19,7 @@ import pymupdf
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import Engine, delete, exists, insert, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -31,6 +32,18 @@ DEFAULT_MAX_UPLOAD_MB = 50
 DEFAULT_MAX_PDF_PAGES = 500
 CHUNK_BYTES = 1024 * 1024
 NO_AUTH_NOTE = "There is no auth: the app is local and single-user."
+DELETED = {"description": "Deleted; no body"}
+
+
+class ErrorDetail(BaseModel):
+    """The body of a 404 or 409: FastAPI's `HTTPException` sends its detail as this."""
+
+    detail: str
+
+
+def error_response(description: str) -> dict:
+    """An error response in the spec, with the body it is sent with."""
+    return {"description": description, "model": ErrorDetail}
 
 
 @dataclass(frozen=True)
@@ -286,7 +299,13 @@ def list_collections(request: Request) -> list[dict]:
 @router.get(
     "/documents/{document_id}/pdf",
     response_class=FileResponse,
-    responses={200: {"content": {"application/pdf": {}}}},
+    responses={
+        200: {
+            "description": "The PDF",
+            "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        404: error_response("`document not found`, or `file not found` when its file is gone"),
+    },
     description=(
         "The stored PDF, inline (`application/pdf`, `X-Content-Type-Options: nosniff`), for "
         "the browser's PDF viewer. The id is the one the server generated at upload; any "
@@ -350,6 +369,7 @@ def document_page(request: Request, document_id: str, page: int) -> dict:
 @router.delete(
     "/documents/{document_id}",
     status_code=204,
+    responses={204: DELETED, 404: error_response("`document not found`")},
     description=(
         "Delete a document: its stored file, its row, and (by foreign-key cascade) every row "
         "derived from it. When it was the last document of its collection, the collection is "
@@ -395,7 +415,11 @@ def _delete_collection_if_empty(conn: Connection, collection_id: int) -> bool:
 @router.delete(
     "/collections/{collection}",
     status_code=204,
-    responses={404: {"description": "No such collection"}, 409: {"description": "Not empty"}},
+    responses={
+        204: DELETED,
+        404: error_response("`collection not found`"),
+        409: error_response("`collection is not empty`"),
+    },
     description=(
         "Delete an empty collection by name. A collection that still has documents is never "
         "deleted here (409 `collection is not empty`): delete its documents first, and the "
