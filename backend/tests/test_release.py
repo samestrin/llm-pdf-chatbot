@@ -272,8 +272,7 @@ def test_changelog_section_prints_usage_and_exits_2_without_a_version_or_with_to
     assert capsys.readouterr().err.count("usage: changelog_section.py") == 2
 
 
-# v1.0.1 is not tagged yet: everything changed since 1.0.0 ships in its notes, so nothing
-# waits under Unreleased.
+# What changed between 1.0.0 and the v1.0.1 tag ships in 1.0.1's notes, not under Unreleased.
 FIXES_IN_1_0_1 = [
     "X-Forwarded-Prefix: /api",  # the reference calls /api through the frontend
     "375 px",  # the reference fits a phone
@@ -291,10 +290,12 @@ def test_unreleased_reads_as_empty_only_when_it_is(tmp_path):
     assert changelog_section.section(empty, "Unreleased") == ""
 
 
-def test_the_unreleased_section_is_empty_until_1_0_1_is_tagged():
+# v1.0.1 is tagged, so Unreleased holds what came after it; none of 1.0.1's fixes waits there.
+@pytest.mark.parametrize("fix", FIXES_IN_1_0_1)
+def test_no_1_0_1_fix_is_left_under_unreleased(fix):
     changelog = (REPO / "CHANGELOG.md").read_text()
     assert "## [Unreleased]" in changelog
-    assert changelog_section.section(changelog, "Unreleased") == ""
+    assert fix not in changelog_section.section(changelog, "Unreleased")
 
 
 @pytest.mark.parametrize("fix", FIXES_IN_1_0_1)
