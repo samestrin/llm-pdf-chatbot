@@ -7,6 +7,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 ### Added
 
 - Model presets for the public demo: `backend/app/presets.json` lists the providers a visitor may pick (OpenAI, OpenRouter, Synthetic, Alibaba and the demo gateway), and `GET /presets` gives the page their ids, labels and models, never a base URL, gateway or key. The documents and chat routes check the `X-Model-Preset`, `X-Model-Key` and `X-Demo-Code` headers: an unknown preset or a bad combination is a 400 that echoes no header value, and no base URL is taken from a request. With `PUBLIC_DEMO=true` the `LLM_*` endpoint is not used for a model call, so chat and uploads fail until a later change sends them the visitor's credentials. A model client takes its own key out of any error body an endpoint sends back.
+- Chat and uploads use the visitor's credentials: a request with a preset and key (or a demo code) embeds its upload and answers its questions with that preset's models, and the key goes to the ingest worker in memory only, never into a row, a file or a log line. With `PUBLIC_DEMO=true`, deep mode asks the preset's one chat model and the rerank endpoint (`RERANK_URL`) is not used; on restart, documents left `queued` or `processing` are marked failed ("upload the document again") instead of queued again, since their keys are gone. Without `PUBLIC_DEMO` a request with no credentials works as before.
 
 ### Changed
 
