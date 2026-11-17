@@ -11,7 +11,7 @@ import logging
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from test_answer import post_chat
 from test_credentials import FAKE_CODE, FAKE_KEY, LLM_ENV, assert_no_secret, dump_rows
 from test_deep import REPORT_2023, REPORT_2024, deep_model, two_reports
@@ -20,7 +20,7 @@ from test_llm import FakeServer
 from test_retrieval import embed_text
 
 from app import answer, credentials, ingest
-from app.db import init_db
+from app.db import collections, init_db
 from app.main import create_app
 
 OPENAI = credentials.load_presets()["openai"]
@@ -249,6 +249,18 @@ def clean_settings(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+def embedded_with(engine, preset_id: str) -> None:
+    """Mark the collection as embedded with the preset it is asked with: a collection is
+    questioned only with its own preset and embedding model."""
+    preset = credentials.load_presets()[preset_id]
+    with engine.begin() as conn:
+        conn.execute(
+            update(collections).values(
+                embedding_preset=preset.id, embedding_model=preset.embedding_model
+            )
+        )
+
+
 def preset_model(payload: dict) -> tuple[int, bytes, str]:
     """Embeddings for an embedding call, the deep model's plan or answer for a chat call."""
     if "input" in payload:
@@ -263,6 +275,7 @@ def test_deep_mode_in_demo_mode_calls_the_preset_chat_model_and_never_the_rerank
     caplog.set_level(logging.DEBUG)
     monkeypatch.setenv("PUBLIC_DEMO", "true")
     two_reports(engine)
+    embedded_with(engine, headers.get("X-Model-Preset", "demo"))
     provider.responder = preset_model
     secret = headers.get("X-Model-Key") or headers["X-Demo-Code"]
     preset = credentials.load_presets()[headers.get("X-Model-Preset", "demo")]
@@ -298,6 +311,7 @@ def test_fast_mode_with_a_key_answers_with_the_preset_outside_a_demo_too(
     monkeypatch.delenv("PUBLIC_DEMO", raising=False)
     monkeypatch.delenv("RERANK_URL", raising=False)
     two_reports(engine)
+    embedded_with(engine, "openai")
     provider.responder = preset_model
 
     with TestClient(create_app(engine)) as client:

@@ -407,8 +407,8 @@ def test_upload_survives_its_collection_being_removed_under_it(client, engine, m
     original = documents_module.get_or_create_collection
     calls = []
 
-    def racing(engine_, name):
-        found = original(engine_, name)
+    def racing(engine_, name, *args):
+        found = original(engine_, name, *args)
         if not calls:
             with engine_.begin() as conn:
                 conn.execute(text("DELETE FROM collections WHERE id = :id"), {"id": found})

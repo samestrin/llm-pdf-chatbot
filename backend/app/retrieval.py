@@ -27,10 +27,11 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import httpx
-from sqlalchemy import Engine, case, cast, func, literal_column, select
+from sqlalchemy import ColumnElement, Engine, and_, case, cast, func, literal_column, select
 from sqlalchemy.dialects.postgresql import TSQUERY
 
 from app.db import (
+    SHARED_OWNER,
     TEXT_SEARCH_CONFIG,
     chunk_embeddings,
     chunk_text_search,
@@ -119,17 +120,24 @@ def fuse(rankings: Sequence[Sequence[int]], k: int = RRF_K) -> dict[int, float]:
     return scores
 
 
+def _collection(collection: str | int) -> ColumnElement[bool]:
+    if isinstance(collection, int):
+        return collections.c.id == collection
+    return and_(collections.c.name == collection, collections.c.session_id == SHARED_OWNER)
+
+
 def retrieve(
     engine: Engine,
     embedder: Embedder,
-    collection: str,
+    collection: str | int,
     question: str,
     *,
     reranker: "Reranker | None" = None,
     limit: int = DEFAULT_LIMIT,
     candidates: int = DEFAULT_CANDIDATES,
 ) -> Retrieval:
-    """The `limit` best passages of the named collection for `question`.
+    """The `limit` best passages of the collection for `question`: a collection id, or a
+    name of the shared owner's (`db.SHARED_OWNER`), as every collection is outside a demo.
 
     Each search returns up to `candidates` chunks; every fused chunk is reranked, and
     `limit` applies last. Raises `ValueError` for an empty question, an `LLMError` when
@@ -148,7 +156,7 @@ def retrieve(
         .join(documents, documents.c.id == chunks.c.document_id)
         .join(collections, collections.c.id == documents.c.collection_id)
         .join(ingestion_status, ingestion_status.c.document_id == documents.c.id)
-        .where(collections.c.name == collection, ingestion_status.c.state == "ready")
+        .where(_collection(collection), ingestion_status.c.state == "ready")
     )
     distance = chunk_embeddings.c.embedding.cosine_distance(query_vector)
     # A vector from an earlier embedding model with another dimension cannot be compared.

@@ -2,6 +2,10 @@
 
 Every table that hangs off a document references it with `ON DELETE CASCADE`,
 so deleting the document row removes everything derived from it.
+
+There are no migrations: `init_db` creates missing tables and never alters one. A database
+made before collections had owners (`collections.session_id`) is refused at startup; start
+on a fresh, empty database.
 """
 
 from pgvector.sqlalchemy import VECTOR
@@ -19,8 +23,10 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     event,
     func,
+    inspect,
     text,
 )
 from sqlalchemy.dialects.postgresql import TSVECTOR
@@ -32,6 +38,9 @@ SearchVector = TSVECTOR().with_variant(Text(), "sqlite")
 TEXT_SEARCH_CONFIG = "english"
 
 INGESTION_STATES = ("queued", "processing", "ready", "failed")
+# The owner of every collection outside a public demo, and of the read-only sample in one.
+# A visitor's session id is 32 hex digits, so it is never this.
+SHARED_OWNER = "shared"
 
 metadata = MetaData()
 
@@ -39,8 +48,16 @@ collections = Table(
     "collections",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("name", String(200), nullable=False, unique=True),
+    # The session that made it (`app.session`), or `SHARED_OWNER`.
+    Column("session_id", String(64), nullable=False, server_default=SHARED_OWNER),
+    Column("name", String(200), nullable=False),
+    # The preset and embedding model its documents were embedded with; both null when it
+    # was embedded with the server's own model, and then it is not checked.
+    Column("embedding_preset", String(32)),
+    Column("embedding_model", String(200)),
+    # A public demo deletes a visitor's collection this long after it was made.
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("session_id", "name", name="collection_name_per_session"),
 )
 
 documents = Table(
@@ -174,4 +191,12 @@ def init_db(engine: Engine) -> None:
         # Compose creates it in db/init; a bare Postgres (as in CI) needs it here.
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    inspector = inspect(engine)
+    if inspector.has_table(collections.name) and "session_id" not in {
+        c["name"] for c in inspector.get_columns(collections.name)
+    }:
+        raise RuntimeError(
+            "the database was made before collections had owners (no collections.session_id) "
+            "and is not migrated: point DATABASE_URL at a fresh, empty database"
+        )
     metadata.create_all(engine)

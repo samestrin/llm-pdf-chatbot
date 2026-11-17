@@ -65,7 +65,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import Path as PathParam
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
@@ -84,6 +84,7 @@ from app.deep import (
     deep_settings,
     plan,
 )
+from app.documents import check_embedding, json_error_response
 from app.ingest import Embedder
 from app.llm import (
     ChatModel,
@@ -108,6 +109,7 @@ from app.retrieval import (
     Retrieval,
     retrieve,
 )
+from app.session import current_session, find_collection
 
 ANSWER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -294,7 +296,7 @@ def answer_events(
 
 def chat_events(
     engine: Engine,
-    collection: str,
+    collection: str | int,
     question: str,
     *,
     mode: AnswerMode = "fast",
@@ -303,7 +305,8 @@ def chat_events(
     embedder: Embedder | None = None,
     credentials: Credentials | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Retrieve from the collection, then answer with the last `CHAT_HISTORY_TURNS` turns
+    """Retrieve from the collection (an id, or the shared owner's name; see `retrieve`),
+    then answer with the last `CHAT_HISTORY_TURNS` turns
     of `history`. With `credentials`, one client for the visitor's preset and key embeds the
     question and answers it, in both modes on the preset's chat model. Otherwise, without
     `llm`, a model client comes from the environment; a missing setting is an error event.
@@ -371,7 +374,7 @@ def _off_topic(min_similarity: float, min_keyword_coverage: float, found: Retrie
 
 def _deep_events(
     engine: Engine,
-    collection: str,
+    collection: str | int,
     question: str,
     llm: LLMClient,
     embedder: Embedder,
@@ -585,7 +588,12 @@ class ChatRequest(BaseModel):
         200: {
             "description": "One JSON event per line; each line is a `ChatEvent`",
             "model": ChatEvent,
-        }
+        },
+        404: json_error_response("`collection not found`: in a public demo, not this session's"),
+        409: json_error_response(
+            "The collection was embedded with another preset or embedding model: `This "
+            "collection was embedded with <model>; switch back to <preset> to ask about it`"
+        ),
     },
 )
 def chat(
@@ -595,9 +603,15 @@ def chat(
     credentials: Annotated[Credentials | None, Depends(request_credentials)],
 ) -> NDJSONResponse:
     state = request.app.state
+    with state.engine.connect() as conn:
+        found = find_collection(conn, current_session(request), collection)
+    if found is None and public_demo():
+        raise HTTPException(404, "collection not found")
+    if found is not None:
+        check_embedding(request, found, credentials, "ask about it")
     events = chat_events(
         state.engine,
-        collection,
+        collection if found is None else found.id,
         body.question,
         mode=body.mode,
         history=[Turn(t.question, t.answer) for t in body.history],

@@ -15,7 +15,7 @@ from typing import Annotated
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
-from sqlalchemy import MetaData, create_engine, select
+from sqlalchemy import MetaData, create_engine, insert, select
 from test_answer import FILENAMES, GLACIER_CLAIM, PASSAGES, page_texts, resolver, stream_json
 from test_ingest import TWENTY_PAGES, upload
 from test_llm import USAGE, FakeServer, delta, sse
@@ -29,6 +29,7 @@ from app.credentials import (
     public_presets,
     request_credentials,
 )
+from app.db import collections
 from app.llm import (
     LLMClient,
     LLMConfig,
@@ -402,7 +403,11 @@ def test_in_public_demo_the_chat_route_never_calls_the_env_endpoint(tmp_path, mo
         monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
         for name, value in {**LLM_ENV, "LLM_BASE_URL": env_llm.url}.items():
             monkeypatch.setenv(name, value)
-        with TestClient(create_app(create_engine(f"sqlite:///{tmp_path}/t.db"))) as client:
+        engine = create_engine(f"sqlite:///{tmp_path}/t.db")
+        with TestClient(create_app(engine)) as client:
+            # A collection every session can read (the sample): a session's unknown one is 404.
+            with engine.begin() as conn:
+                conn.execute(insert(collections).values(name="papers"))
             resp = client.post("/collections/papers/chat", json={"question": "hi"})
         events = [json.loads(line) for line in resp.text.splitlines()]
         assert events[-1]["type"] == "error"

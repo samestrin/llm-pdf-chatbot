@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from app import answer, documents
+from app import answer, documents, session
 from app.credentials import PRESETS, public_presets, request_credentials
 from app.db import init_db
 from app.ingest import Embedder, IngestWorker, batch_size_from_env
@@ -62,11 +62,20 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         init_db(app.state.engine)
+        sweeper = None
+        if public_demo():
+            sweeper = session.UploadSweeper(
+                app.state.engine, app.state.limits.upload_dir, session.upload_ttl()
+            )
+            sweeper.sweep()
+            sweeper.start()
         app.state.worker.start()
         try:
             yield
         finally:
             app.state.worker.stop()
+            if sweeper is not None:
+                sweeper.stop()
 
     app = FastAPI(
         title="llm-pdf-chatbot",
@@ -84,6 +93,8 @@ def create_app(
     app.state.worker = IngestWorker(
         app.state.engine, app.state.limits, embedder, batch_size=batch_size_from_env()
     )
+    # In a public demo every request has a session (`app.session`); its collections are its own.
+    app.add_middleware(session.SessionMiddleware, secret=session.session_secret())
     # Every route reads the model headers, so a bad preset or key is a 400 before any work.
     credentials = [Depends(request_credentials)]
     app.include_router(documents.router, dependencies=credentials)
