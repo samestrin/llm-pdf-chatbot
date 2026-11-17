@@ -84,7 +84,7 @@ from app.deep import (
     deep_settings,
     plan,
 )
-from app.documents import check_embedding, error_response
+from app.documents import check_embedding, json_error_response
 from app.ingest import Embedder
 from app.llm import (
     ChatModel,
@@ -589,8 +589,8 @@ class ChatRequest(BaseModel):
             "description": "One JSON event per line; each line is a `ChatEvent`",
             "model": ChatEvent,
         },
-        404: error_response("`collection not found`: in a public demo, not this session's"),
-        409: error_response(
+        404: json_error_response("`collection not found`: in a public demo, not this session's"),
+        409: json_error_response(
             "The collection was embedded with another preset or embedding model: `This "
             "collection was embedded with <model>; switch back to <preset> to ask about it`"
         ),

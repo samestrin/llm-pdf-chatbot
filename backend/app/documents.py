@@ -54,6 +54,14 @@ def error_response(description: str) -> dict:
     return {"description": description, "model": ErrorDetail}
 
 
+def json_error_response(description: str) -> dict:
+    """`error_response` for a route whose success is not JSON: the error body still is."""
+    return {
+        "description": description,
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}},
+    }
+
+
 @dataclass(frozen=True)
 class Limits:
     upload_dir: Path
@@ -112,18 +120,21 @@ def get_or_create_collection(
 def check_embedding(request: Request, found, credentials: Credentials | None, action: str):
     """A 409 with the plain message when the request's preset or embedding model is not the
     one the collection was embedded with; its vectors could not be compared. A collection
-    embedded with the server's own model records no preset and is not checked."""
-    if found.embedding_preset is None:
-        return
+    embedded with the server's own model (no preset) is asked only without credentials."""
     preset = credentials.preset if credentials else None
-    if (
+    if found.embedding_preset is None:
+        if preset is None:
+            return
+        label = "the server's own model"
+    elif (
         preset is not None
         and preset.id == found.embedding_preset
         and preset.embedding_model == found.embedding_model
     ):
         return
-    recorded = request.app.state.presets.get(found.embedding_preset)
-    label = recorded.label if recorded else found.embedding_preset
+    else:
+        recorded = request.app.state.presets.get(found.embedding_preset)
+        label = recorded.label if recorded else found.embedding_preset
     raise HTTPException(
         409,
         f"This collection was embedded with {found.embedding_model or 'no embedding model'}; "
@@ -142,7 +153,11 @@ def _upload_collection(
     if found is not None:
         require_owner(session, found.session_id)
     preset = credentials.preset if credentials else None
-    embedding = (preset.id, preset.embedding_model) if preset else (None, None)
+    embedding = (
+        (preset.id, preset.embedding_model)
+        if preset
+        else (None, os.environ.get("LLM_EMBEDDING_MODEL", "").strip() or None)
+    )
     collection_id = get_or_create_collection(engine, name, session, embedding)
     with engine.connect() as conn:
         found = conn.execute(

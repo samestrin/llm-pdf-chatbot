@@ -831,7 +831,7 @@
           "404": {
             "description": "`collection not found`: in a public demo, not this session's",
             "content": {
-              "application/x-ndjson": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorDetail"
                 }
@@ -841,7 +841,7 @@
           "409": {
             "description": "The collection was embedded with another preset or embedding model: `This collection was embedded with <model>; switch back to <preset> to ask about it`",
             "content": {
-              "application/x-ndjson": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorDetail"
                 }
