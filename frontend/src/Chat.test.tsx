@@ -467,3 +467,26 @@ describe('Chat in a public demo', () => {
     })
   })
 })
+
+describe('Chat retry in a public demo', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('a retry after the key was cleared opens the panel instead of calling the model', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(ndjson({ type: 'error', message: 'The key was rejected by OpenAI' })),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    const credentials = { preset: 'openai', secret: 'sk-k' }
+    const { rerender } = render(
+      <Chat collection="default" modelAccess={{ credentials, onMissing }} />,
+    )
+    ask('one')
+    const retry = await screen.findByRole('button', { name: 'Retry' })
+    // The visitor clears the key, then retries the failed answer.
+    rerender(<Chat collection="default" modelAccess={{ credentials: null, onMissing }} />)
+    fireEvent.click(retry)
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})

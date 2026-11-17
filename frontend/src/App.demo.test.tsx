@@ -62,7 +62,7 @@ function ndjson(...events: object[]) {
 
 /** Every fetch the page makes, answered by URL; chat requests are recorded. */
 function stubDemoFetch(options?: { chat?: () => Response; collections?: unknown[] }) {
-  const fetch = vi.fn((url: string) => {
+  const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>((url) => {
     if (url === '/api/presets') return Promise.resolve(Response.json(PRESETS))
     if (url === '/api/health') return Promise.resolve(Response.json({ status: 'ok' }))
     if (url === '/api/collections')
@@ -110,7 +110,7 @@ describe('App in a public demo', () => {
       ),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Add a key or demo code' }),
+      within(screen.getByRole('banner')).getByRole('button', { name: 'Add a key or demo code' }),
     ).toBeInTheDocument()
   })
 
@@ -128,7 +128,11 @@ describe('App in a public demo', () => {
   it('sends the saved key only in the request headers of the chat call', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('openai', 'sk-visitor-key')
     ask('How long is the lease?')
     await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
@@ -147,27 +151,35 @@ describe('App in a public demo', () => {
   })
 
   it('remembers the key in local storage only when the box is ticked, and reloads it', async () => {
-    const fetch = stubDemoFetch()
+    stubDemoFetch()
     const { unmount } = render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('openai', 'sk-visitor-key', true)
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull()
     unmount()
-    stubDemoFetch()
+    const reloaded = stubDemoFetch()
     render(<App />)
     // The remembered key is used without opening the panel.
     expect(
       await screen.findByRole('button', { name: 'Model key: OpenAI' }),
     ).toBeInTheDocument()
     ask('again')
-    await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
+    await vi.waitFor(() => expect(chatCalls(reloaded)).toHaveLength(1))
   })
 
   it('clear wipes the key from both stores, and the next ask opens the panel again', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('openai', 'sk-visitor-key', true)
     fireEvent.click(screen.getByRole('button', { name: 'Model key: OpenAI' }))
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
@@ -182,7 +194,11 @@ describe('App in a public demo', () => {
   it('sends a demo code as X-Demo-Code, never as X-Model-Key', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('demo', 'demo-code-123')
     ask('with a code')
     await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
@@ -199,7 +215,11 @@ describe('App in a public demo', () => {
       'This collection was embedded with text-embedding-3-small; switch back to OpenAI to ask about it'
     stubDemoFetch({ chat: () => Response.json({ detail: message }, { status: 409 }) })
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('synthetic', 'sk-other')
     ask('mismatched')
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
@@ -230,7 +250,11 @@ describe('App in a public demo', () => {
   it('a preset with no embedding model cannot take uploads, and the panel says why', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('synthetic', 'sk-syn')
     const documents = screen.getByRole('complementary', { name: 'Documents' })
     expect(
@@ -258,7 +282,11 @@ describe('App in a public demo', () => {
     }
     vi.stubGlobal('XMLHttpRequest', FakeXhr)
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a key or demo code' }))
+    fireEvent.click(
+      await within(screen.getByRole('banner')).findByRole('button', {
+        name: 'Add a key or demo code',
+      }),
+    )
     saveKey('openai', 'sk-visitor-key')
     const documents = screen.getByRole('complementary', { name: 'Documents' })
     const input = within(documents).getByLabelText('PDF', { selector: 'input' })
@@ -276,7 +304,7 @@ describe('App outside a public demo', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('shows no notice, no key control and no panel, and asks without headers', async () => {
-    const fetch = vi.fn((url: string) => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>((url) => {
       if (url === '/api/presets')
         return Promise.resolve(
           Response.json({ public_demo: false, upload_ttl_minutes: null, presets: [] }),

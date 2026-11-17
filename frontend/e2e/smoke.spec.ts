@@ -14,7 +14,10 @@ test('loads the app and checks the backend health at same-origin /api', async ({
   await expect(page.getByRole('heading', { name: 'No documents yet' })).toBeVisible()
   await expect(page.getByRole('banner')).not.toContainText('Backend')
   // React StrictMode runs the effect twice in dev, so the call can repeat.
-  expect(new Set(api.calls)).toEqual(new Set(['GET /api/health', 'GET /api/collections']))
+  // The page also loads GET /presets to know whether it is a public demo.
+  expect(new Set(api.calls)).toEqual(
+    new Set(['GET /api/health', 'GET /api/collections', 'GET /api/presets']),
+  )
 })
 
 test('shows the backend as down when /api/health fails, with no Retry', async ({ page, api }) => {

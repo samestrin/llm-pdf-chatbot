@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { useActiveCollection } from './activeCollection'
-import { uploadDocument, type Collection } from './api'
+import { uploadDocument, type Collection, type Preset } from './api'
 import DocumentsPanel from './DocumentsPanel'
 
 /** The panel with the active collection held the way the page holds it. */
@@ -438,17 +438,17 @@ describe('DocumentsPanel in a public demo', () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(() => vi.unstubAllGlobals())
 
-  const preset = {
+  const preset: Preset = {
     id: 'openai',
     label: 'OpenAI',
-    kind: 'key' as const,
+    kind: 'key',
     chat_model: 'gpt-5-nano',
     embedding_model: 'text-embedding-3-small',
   }
 
   function demoPanel(overrides?: {
     credentials?: { preset: string; secret: string } | null
-    preset?: typeof preset | null
+    preset?: Preset | null
     onMissing?: () => void
   }) {
     const onMissing = overrides?.onMissing ?? vi.fn()
@@ -559,5 +559,84 @@ describe('DocumentsPanel in a public demo', () => {
       target: { files: [new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })] },
     })
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
+  })
+})
+
+describe('DocumentsPanel retry in a public demo', () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('a retry after the key was cleared opens the panel instead of uploading', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json([]))))
+    vi.mocked(uploadDocument).mockRejectedValue(new Error('upload failed'))
+    const onMissing = vi.fn()
+    const credentials = { preset: 'openai', secret: 'sk-k' }
+    const preset: Preset = {
+      id: 'openai',
+      label: 'OpenAI',
+      kind: 'key',
+      chat_model: 'gpt-5-nano',
+      embedding_model: 'text-embedding-3-small',
+    }
+    const active = { name: 'default', draft: false }
+    const noop = () => {}
+    const { rerender } = render(
+      <DocumentsPanel
+        active={active}
+        onActiveChange={noop}
+        demo={{ ttlMinutes: 45, credentials, preset, onMissing }}
+      />,
+    )
+    const input = await screen.findByLabelText('PDF', { selector: 'input' })
+    fireEvent.change(input, {
+      target: { files: [new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })] },
+    })
+    const retry = await screen.findByRole('button', { name: 'Retry upload' })
+    expect(uploadDocument).toHaveBeenCalledTimes(1)
+    // The visitor clears the key, then retries the failed upload.
+    rerender(
+      <DocumentsPanel
+        active={active}
+        onActiveChange={noop}
+        demo={{ ttlMinutes: 45, credentials: null, preset: null, onMissing }}
+      />,
+    )
+    fireEvent.click(retry)
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(uploadDocument).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DocumentsPanel drop in a public demo', () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('a dropped PDF is refused for a preset with no embedding model, with the reason', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json([]))))
+    render(
+      <DocumentsPanel
+        active={{ name: 'default', draft: false }}
+        onActiveChange={() => {}}
+        demo={{
+          ttlMinutes: 45,
+          credentials: { preset: 'synthetic', secret: 'sk-s' },
+          preset: {
+            id: 'synthetic',
+            label: 'Synthetic',
+            kind: 'key',
+            chat_model: 'x',
+            embedding_model: null,
+          },
+          onMissing: () => {},
+        }}
+      />,
+    )
+    const panel = await screen.findByRole('complementary', { name: 'Documents' })
+    const file = new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })
+    fireEvent.drop(panel, { dataTransfer: { files: [file], types: ['Files'] } })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Synthetic has no embedding model, so it cannot take uploads.',
+    )
+    expect(uploadDocument).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,7 @@
 // The backend is reached at same-origin `/api`; nginx and the Vite dev server
 // proxy it (see nginx.conf and vite.config.ts).
+import { modelHeaders, type ModelCredentials } from './modelAccess'
+
 export const API_BASE = '/api'
 
 export type Health = 'ok' | 'unreachable'
@@ -45,7 +47,36 @@ export function isIngesting(doc: DocumentInfo): boolean {
 export interface Collection {
   id: number
   name: string
+  /** The preset and embedding model the collection was built with; null for the server's own. */
+  embedding_preset?: string | null
+  embedding_model?: string | null
+  /** The shared sample in a public demo: it can be read and asked, not changed. */
+  read_only?: boolean
   documents: DocumentInfo[]
+}
+
+/** What the page may know of a preset: no base URL, gateway or key. */
+export interface Preset {
+  id: string
+  label: string
+  kind: 'key' | 'demo'
+  chat_model: string
+  /** null when the preset cannot embed: it cannot take uploads. */
+  embedding_model: string | null
+}
+
+export interface PresetList {
+  /** Whether every model call needs a demo code or the visitor's own key. */
+  public_demo: boolean
+  /** The public notice names it; null outside a public demo. */
+  upload_ttl_minutes: number | null
+  presets: Preset[]
+}
+
+export async function getPresets(signal?: AbortSignal): Promise<PresetList> {
+  const res = await fetch(`${API_BASE}/presets`, { signal })
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
 }
 
 async function errorDetail(res: Response): Promise<string> {
@@ -84,15 +115,22 @@ export async function deleteCollection(name: string): Promise<void> {
   if (!res.ok) throw new Error(await errorDetail(res))
 }
 
-/** Upload with XHR, because fetch cannot report upload progress. */
+/** Upload with XHR, because fetch cannot report upload progress. The visitor's
+ * credentials, when given, go as request headers only. */
 export function uploadDocument(
   collection: string,
   file: File,
   onProgress: (fraction: number) => void,
+  credentials?: ModelCredentials | null,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_BASE}/collections/${encodeURIComponent(collection)}/documents`)
+    if (credentials) {
+      for (const [name, value] of Object.entries(modelHeaders(credentials))) {
+        xhr.setRequestHeader(name, value)
+      }
+    }
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total)
     }
@@ -187,16 +225,21 @@ function parseEvent(line: string): ChatEvent {
   throw new Error('malformed answer stream')
 }
 
-/** Ask a question and yield the answer's events as they arrive. */
+/** Ask a question and yield the answer's events as they arrive. The visitor's
+ * credentials, when given, go as request headers only. */
 export async function* streamChat(
   collection: string,
   question: string,
   signal?: AbortSignal,
   mode: ChatMode = 'fast',
+  credentials?: ModelCredentials | null,
 ): AsyncGenerator<ChatEvent> {
   const res = await fetch(`${API_BASE}/collections/${encodeURIComponent(collection)}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(credentials ? modelHeaders(credentials) : {}),
+    },
     body: JSON.stringify({ question, mode }),
     signal,
   })

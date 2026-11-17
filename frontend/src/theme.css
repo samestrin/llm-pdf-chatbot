@@ -350,6 +350,63 @@ label {
   border-color: var(--color-border-strong);
 }
 
+/* Public demo: the key panel, the notice and the notes about keys and models */
+
+.key-toggle {
+  margin-left: auto;
+}
+
+.key-toggle + .theme-toggle {
+  margin-left: 0;
+}
+
+.key-panel {
+  margin-bottom: var(--space-4);
+}
+
+.key-panel form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  max-width: 28rem;
+}
+
+.key-panel label {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.key-panel label.remember-field {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.key-panel-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.demo-notice {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  border-left: 3px solid var(--color-accent);
+  padding-left: var(--space-2);
+}
+
+.key-note {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.embedding-model {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-2);
+}
+
 /* Documents panel */
 
 .upload-form {

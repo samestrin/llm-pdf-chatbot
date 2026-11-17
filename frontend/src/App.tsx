@@ -2,8 +2,23 @@ import { useCallback, useEffect, useState } from 'react'
 import Chat from './Chat'
 import ThemeToggle from './ThemeToggle'
 import DocumentsPanel from './DocumentsPanel'
+import KeyPanel from './KeyPanel'
 import { useActiveCollection } from './activeCollection'
-import { getHealth, isIngesting, type Collection, type Health } from './api'
+import {
+  getHealth,
+  getPresets,
+  isIngesting,
+  type Collection,
+  type Health,
+  type PresetList,
+} from './api'
+import {
+  clearCredentials,
+  loadCredentials,
+  saveCredentials,
+  type ModelCredentials,
+  type StoredCredentials,
+} from './modelAccess'
 import LogoMark from './LogoMark'
 
 export default function App() {
@@ -13,6 +28,14 @@ export default function App() {
   const [loadFailed, setLoadFailed] = useState(false)
   const onLoadError = useCallback((message: string | null) => setLoadFailed(message !== null), [])
   const { active, setActive, onLoaded } = useActiveCollection()
+  // The public demo's presets and notice, from GET /presets; null when the backend
+  // does not answer it (then the page works as it always did, without credentials).
+  const [presetList, setPresetList] = useState<PresetList | null>(null)
+  const [creds, setCreds] = useState<StoredCredentials | null>(() => loadCredentials())
+  const [panelOpen, setPanelOpen] = useState(false)
+  const demo = presetList?.public_demo === true
+  const preset = demo ? (presetList?.presets.find((p) => p.id === creds?.preset) ?? null) : null
+  const openPanel = useCallback(() => setPanelOpen(true), [])
   const onCollections = useCallback(
     (loaded: Collection[]) => {
       setCollections(loaded)
@@ -24,8 +47,20 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController()
     getHealth(controller.signal).then(setHealth, () => {})
+    getPresets(controller.signal).then(setPresetList, () => {})
     return () => controller.abort()
   }, [])
+
+  function onSaveKey(credentials: ModelCredentials, remember: boolean) {
+    saveCredentials(credentials, remember)
+    setCreds({ ...credentials, remember })
+    setPanelOpen(false)
+  }
+
+  function onClearKey() {
+    clearCredentials()
+    setCreds(null)
+  }
 
   const ingesting = Object.fromEntries(
     (collections ?? []).map((c) => [
@@ -49,14 +84,43 @@ export default function App() {
         <div className="backend-status">
           <p role="status">{down ? 'Backend is down' : ''}</p>
         </div>
+        {demo && (
+          <button
+            type="button"
+            className="secondary small key-toggle"
+            aria-expanded={panelOpen}
+            onClick={() => setPanelOpen((open) => !open)}
+          >
+            {creds ? `Model key: ${preset?.label ?? creds.preset}` : 'Add a key or demo code'}
+          </button>
+        )}
         <ThemeToggle />
       </header>
+      {demo && panelOpen && presetList && (
+        <KeyPanel
+          presets={presetList.presets}
+          stored={creds}
+          onSave={onSaveKey}
+          onClear={onClearKey}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
       <div className="app-layout">
         <DocumentsPanel
           active={active}
           onActiveChange={setActive}
           onCollections={onCollections}
           onLoadError={onLoadError}
+          demo={
+            demo && presetList
+              ? {
+                  ttlMinutes: presetList.upload_ttl_minutes,
+                  credentials: creds,
+                  preset,
+                  onMissing: openPanel,
+                }
+              : undefined
+          }
         />
         <main id="main" tabIndex={-1}>
           <Chat
@@ -64,6 +128,7 @@ export default function App() {
             loading={collections === null && !loadFailed}
             empty={collections !== null && collections.every((c) => c.documents.length === 0)}
             ingesting={ingesting}
+            modelAccess={demo ? { credentials: creds, onMissing: openPanel } : undefined}
           />
         </main>
       </div>
