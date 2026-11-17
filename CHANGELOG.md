@@ -17,6 +17,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 ### Changed
 
 - The `demo` preset asks the demo gateway for `demo-chat` and `demo-embedding`, the only model names the gateway serves, instead of `gpt-5-nano` and `text-embedding-3-small`, which it refused with 400. A collection uploaded with a demo code before this change was embedded under the old name and is refused (409) until it is uploaded again. The other presets are unchanged.
+- The docs cover the public demo: the README has a [Public demo](README.md#public-demo) section, `docs/configuration.md` documents `PUBLIC_DEMO` and the session, Origin, TTL and cap settings, and `docs/api.md` documents the `X-Model-Preset`, `X-Model-Key` and `X-Demo-Code` headers, `GET /presets`, and the 400, 403, 404 and 409 rejections of a public demo.
 - The OpenAPI spec (`/api/openapi.json`, `docs/openapi.json`) gives a response schema for the four operations that had none: the chat stream's line is `ChatEvent`, a `oneOf` on `type` over `StepEvent`, `ClaimEvent`, `RefusalEvent`, `ErrorEvent` and `DoneEvent`; the PDF download is `application/pdf` binary; the two deletes are 204 with no body, and their 404 (and the collection's 409) is `{"detail": "..."}`. The backend builds each chat event from the same models, and what the API sends is unchanged. `docs/api.md` names the event schemas.
 
 ## [1.0.1] - 2026-11-12

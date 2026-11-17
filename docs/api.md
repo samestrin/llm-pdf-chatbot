@@ -8,6 +8,46 @@ Through the frontend, nginx tells the backend its `/api` prefix (`X-Forwarded-Pr
 
 ## Behaviour the spec does not carry
 
+### Model credentials in a public demo
+
+Every collection, document and chat route accepts the visitor's model credentials as request headers. A request names a preset from `GET /presets`, never a base URL: the server reaches only that preset's own address, or `DEMO_GATEWAY_URL` for the demo preset.
+
+| Header | Meaning |
+| --- | --- |
+| `X-Model-Preset` | A preset id from `GET /presets` (`openai`, `openrouter`, `synthetic`, `alibaba` or `demo`). Required with `X-Model-Key`; optional with `X-Demo-Code`, which implies `demo`. |
+| `X-Model-Key` | The visitor's own key for that preset. It is sent to the preset's provider for that request only: never stored in a row or a file, and never written to a log line or an error body. |
+| `X-Demo-Code` | A demo code for the `demo` preset. The app sends it to `DEMO_GATEWAY_URL` as the API key; it is handled like a key. |
+
+A request with none of these headers uses the server's `LLM_*` endpoint, as in the single shared mode. With `PUBLIC_DEMO=true` the server's endpoint is not used for a visitor's chat or upload: a request without credentials fails with `PUBLIC_DEMO is on: a model call needs a demo code or a preset key`, in the chat stream's `error` event or as the document's failure reason.
+
+A bad header combination is a 400 whose detail names headers, never a value: `X-Model-Key` and `X-Demo-Code` together; `X-Demo-Code` without the `demo` preset; `X-Model-Key` without `X-Model-Preset`; a preset without its key; the `demo` preset without a code; an unknown preset; or a key or code that is not in the expected shape. A demo code when `DEMO_GATEWAY_URL` is unset is 503 (`demo codes are not available here`).
+
+`GET /presets` tells the page what it may offer. It holds no base URL, gateway address or key; the `demo` preset is listed only when `DEMO_GATEWAY_URL` is set, and a preset with no embedding model has `"embedding_model": null`:
+
+```json
+{
+  "public_demo": true,
+  "upload_ttl_minutes": 60,
+  "presets": [
+    {"id": "openai", "label": "OpenAI", "kind": "key", "chat_model": "gpt-5-nano", "embedding_model": "text-embedding-3-small"},
+    {"id": "demo", "label": "Demo code", "kind": "demo", "chat_model": "demo-chat", "embedding_model": "demo-embedding"}
+  ]
+}
+```
+
+Outside a public demo `public_demo` is `false` and `upload_ttl_minutes` is `null`. The page's key panel, the notice and what is stored in the browser are described in [Configuration](configuration.md#sessions-in-a-public-demo).
+
+### Rejections in a public demo
+
+| Status | When |
+| --- | --- |
+| 400 | A bad model-header combination, as above. |
+| 403 | An upload or either delete whose `Origin` is not the app's (`DEMO_ORIGIN`, or else the request's own host), or a browser request (one with `Sec-Fetch-Site`) that sent no `Origin`: `This request came from another site and was refused`; or a change to the read-only sample: `The sample collection is read-only`. Nothing is changed. |
+| 404 | A collection, document, page or PDF of another session, exactly as for one that does not exist. |
+| 409 | The upload past a session cap (`DEMO_SESSION_MAX_COLLECTIONS` or `DEMO_SESSION_MAX_UPLOAD_MB`), until a delete frees room; or a question or upload with a preset or embedding model other than the collection's: `This collection was embedded with <model>; switch back to <preset> to ask about it`. |
+
+Reads and chat are not checked against `Origin`; only the session cookie writes are. Without `PUBLIC_DEMO` there is no Origin check, no cap and no sample rule.
+
 ### Ingestion and stored files
 
 - Document status reports chunk progress in `chunks_total` and `chunks_embedded`, updated after the pages are read and after every embedding batch. A document can be `ready` with failed pages; each failure has its page, reason and OCR error under `failures`.
