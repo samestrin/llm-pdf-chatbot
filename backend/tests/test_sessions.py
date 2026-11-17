@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, insert, select, text, update
 from test_credentials import FAKE_CODE, FAKE_KEY
-from test_ingest import make_pdf
+from test_ingest import FakeEmbedder, make_pdf
 from test_llm import FakeServer
 from test_retrieval import add_document as add_ready_document
 from test_retrieval import embed_text
@@ -518,13 +518,59 @@ def test_an_upload_with_another_preset_is_refused_and_stores_nothing(db_engine, 
     assert [p.name for p in uploads.iterdir()] == [f"{first['id']}.pdf"]
 
 
-def test_without_a_recorded_preset_a_collection_is_not_checked(db_engine, provider, uploads):
-    """A collection embedded with the server's own model (no preset) is asked as before."""
+SERVER_MISMATCH = (
+    "This collection was embedded with nomic-embed-text; "
+    "switch back to the server's own model to ask about it"
+)
+
+
+def test_a_collection_of_the_servers_model_is_refused_to_a_preset(db_engine, provider, uploads):
+    """Its vectors are the server model's: a visitor's model may share their dimension and
+    still mean something else, so asking with a preset is refused, never answered."""
+    with TestClient(create_app(db_engine)) as client:
+        with db_engine.begin() as conn:
+            conn.execute(
+                insert(collections).values(name="papers", embedding_model="nomic-embed-text")
+            )
+        for headers in (KEY_HEADERS, CODE_HEADERS):
+            resp = chat(client, headers=headers)
+            assert resp.status_code == 409, resp.text
+            assert resp.json() == {"detail": SERVER_MISMATCH}
+        upload_resp = upload(client)
+    assert provider.requests == []
+    assert upload_resp.status_code == 409
+    assert upload_resp.json() == {"detail": SERVER_MISMATCH.replace("ask about it", "add to it")}
+
+
+def test_a_collection_of_the_servers_model_is_asked_without_credentials_as_before(
+    db_engine, provider, uploads
+):
     with TestClient(create_app(db_engine)) as client:
         with db_engine.begin() as conn:
             conn.execute(insert(collections).values(name="papers"))
-        resp = chat(client)
+        resp = chat(client, headers={})
     assert resp.status_code == 200
+
+
+def test_an_upload_without_credentials_records_the_servers_embedding_model(
+    db_engine, uploads, monkeypatch
+):
+    monkeypatch.setenv("LLM_EMBEDDING_MODEL", "nomic-embed-text")
+    with TestClient(create_app(db_engine, embedder=FakeEmbedder(db_engine))) as client:
+        uploaded(client, headers={})
+        (listed,) = client.get("/collections").json()
+    assert (listed["embedding_preset"], listed["embedding_model"]) == (None, "nomic-embed-text")
+
+
+@pytest.mark.parametrize("status", ["404", "409"])
+def test_the_chat_errors_are_json_in_the_spec_as_sent(db_engine, demo, status):
+    with TestClient(create_app(db_engine)) as client:
+        spec = client.get("/openapi.json").json()
+        sent = chat(client, "nowhere")
+    response = spec["paths"]["/collections/{collection}/chat"]["post"]["responses"][status]
+    assert list(response["content"]) == ["application/json"]
+    assert sent.status_code == 404
+    assert sent.headers["content-type"] == "application/json"
 
 
 # --- the schema ---
