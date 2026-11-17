@@ -59,6 +59,20 @@ docker compose up --build
 
 `docker compose down` stops and removes the containers and keeps the database and uploads volumes. `docker compose down -v` also deletes those volumes, with every stored document.
 
+## Public demo
+
+The app can run as a public demo, where visitors bring a demo code or their own model key, so it never spends your key on an anonymous visitor, and each visitor's uploads stay in their own session.
+
+Set `PUBLIC_DEMO=true` in a compose override, along with the `SESSION_SECRET` and `DEMO_*` settings you need, because the default `docker-compose.yml` does not pass them; [docs/configuration.md](docs/configuration.md#settings-the-backend-reads-but-docker-composeyml-does-not-pass) lists every one. With the public demo on:
+
+- The page opens a key panel instead of asking: pick a preset from `GET /presets`, then paste your own key or a demo code. A question or file entered without one opens the panel and is kept while you add it. The key lives in the browser and is sent per request in the `X-Model-Preset` and `X-Model-Key` headers, or as `X-Demo-Code` with the `demo` preset.
+- Each browser gets a signed, HttpOnly `pdfchat_session` cookie. Its collections, documents, pages and PDFs are its own: another session gets 404. A visitor's collection expires after its TTL, and each session has a cap on collections and uploads.
+- Uploads and deletes from another site are refused (403), checked against the app's origin.
+- A collection uploaded with `PUBLIC_DEMO` off is the read-only sample: every session can read and ask it, none can change it. Upload it with the preset headers visitors will use.
+- A collection is asked only with the preset and embedding model it was built with; another one is refused with a plain message.
+
+The public demo needs **a fresh, empty database**: there are no migrations, and the backend refuses to start on a database made before collections had sessions. The header and preset details are in [docs/api.md](docs/api.md#model-credentials-in-a-public-demo).
+
 ## Quick start
 
 With Ollama running on the host:
@@ -172,7 +186,7 @@ Details, including deep mode and how the viewer finds the quote on the page, are
 
 ## Limits
 
-- There is no auth: the app is local and single-user. Do not expose it to a network you do not trust without an auth proxy in front.
+- There are no accounts. The app is local and single-user; the public demo's session cookie keeps visitors' collections apart but is not a login. Do not expose either mode to a network you do not trust without an auth proxy in front.
 - Uploads are limited to 50 MB and 500 pages (see [docs/configuration.md](docs/configuration.md#settings-the-backend-reads-but-docker-composeyml-does-not-pass)).
 - A question is answered from one collection at a time.
 - Scanned PDFs need a separate `llm-pdf-ocr-api` service; without `OCR_URL`, a PDF with no text layer fails to ingest.

@@ -104,6 +104,19 @@ def readme_variables():
     return set(re.findall(r"`([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)`", readme)) - COMPOSE_LEVEL_VARS
 
 
+# Settings the backend reads that compose deliberately does not pass, such as the public
+# demo's. docs/configuration.md is their single home: the README only says to set them in
+# a compose override. Keeping the list in one place makes the two docs disagree loudly.
+def documented_not_passed_variables():
+    configuration = (REPO / "docs" / "configuration.md").read_text()
+    section = re.search(
+        r"^## Settings the backend reads but `docker-compose\.yml` does not pass\n(.*?)(?=^## )",
+        configuration,
+        re.MULTILINE | re.DOTALL,
+    ).group(1)
+    return set(re.findall(r"^\| `([A-Z][A-Z0-9_]+)` \|", section, re.MULTILINE))
+
+
 def compose_backend_environment_names():
     compose = (REPO / "docker-compose.yml").read_text()
     backend = re.search(r"^  backend:\n(.*?)(?=^  \S)", compose, re.MULTILINE | re.DOTALL).group(1)
@@ -118,8 +131,19 @@ def test_readme_documents_variables():
     assert {"LLM_BASE_URL", "RERANK_URL", "LLM_TIMEOUT_SECONDS"} <= readme_variables()
 
 
+def test_documented_not_passed_variables_covers_the_public_demo():
+    # Guards the helper below against a docs pattern that finds nothing.
+    assert {
+        "PUBLIC_DEMO",
+        "SESSION_SECRET",
+        "DEMO_GATEWAY_URL",
+    } <= documented_not_passed_variables()
+
+
 def test_compose_passes_every_readme_documented_variable_to_the_backend():
-    missing = readme_variables() - compose_backend_environment_names()
+    missing = (
+        readme_variables() - compose_backend_environment_names() - documented_not_passed_variables()
+    )
     assert not missing, sorted(missing)
 
 
