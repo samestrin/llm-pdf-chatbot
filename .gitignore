@@ -134,3 +134,7 @@ dist
 # private plans (kept in a separate repo)
 .planning/
 .coverage
+
+# Python bytecode
+__pycache__/
+*.pyc
