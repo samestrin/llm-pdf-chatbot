@@ -308,6 +308,30 @@ def test_the_client_uses_the_preset_chat_model_for_both_roles():
         client.close()
 
 
+def test_the_demo_preset_uses_the_gateways_model_names(gateway):
+    # The demo gateway serves only `demo-chat` and `demo-embedding`; any other name is a 400.
+    client = client_for(Credentials(load_presets()["demo"], FAKE_CODE))
+    try:
+        assert client.config.base_url == gateway.url
+        assert client.config.fast_model == client.config.reasoning_model == "demo-chat"
+        assert client.config.embedding_model == "demo-embedding"
+    finally:
+        client.close()
+
+
+def test_the_key_presets_keep_their_providers_model_names():
+    models = {
+        p.id: (p.chat_model, p.embedding_model) for p in load_presets().values() if p.id != "demo"
+    }
+    assert models == {
+        "openai": ("gpt-5-nano", "text-embedding-3-small"),
+        "openrouter": ("qwen/qwen3.7-flash", "thenlper/gte-base"),
+        "synthetic": ("hf:zai-org/GLM-5.3-Flash", None),
+        "alibaba": ("qwen-flash", "text-embedding-v4"),
+    }
+    assert not any(name.startswith("demo-") for pair in models.values() for name in pair if name)
+
+
 def test_the_client_ignores_the_env_endpoint(monkeypatch):
     for name, value in LLM_ENV.items():
         monkeypatch.setenv(name, value)

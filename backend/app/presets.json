@@ -37,8 +37,8 @@
       "label": "Demo code",
       "kind": "demo",
       "base_url": null,
-      "chat_model": "gpt-5-nano",
-      "embedding_model": "text-embedding-3-small"
+      "chat_model": "demo-chat",
+      "embedding_model": "demo-embedding"
     }
   ]
 }
