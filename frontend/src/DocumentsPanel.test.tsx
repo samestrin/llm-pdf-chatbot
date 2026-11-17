@@ -433,3 +433,131 @@ describe('DocumentsPanel', () => {
     })
   })
 })
+
+describe('DocumentsPanel in a public demo', () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(() => vi.unstubAllGlobals())
+
+  const preset = {
+    id: 'openai',
+    label: 'OpenAI',
+    kind: 'key' as const,
+    chat_model: 'gpt-5-nano',
+    embedding_model: 'text-embedding-3-small',
+  }
+
+  function demoPanel(overrides?: {
+    credentials?: { preset: string; secret: string } | null
+    preset?: typeof preset | null
+    onMissing?: () => void
+  }) {
+    const onMissing = overrides?.onMissing ?? vi.fn()
+    const demo = {
+      ttlMinutes: 45,
+      credentials: overrides?.credentials === undefined ? null : overrides.credentials,
+      preset: overrides?.preset === undefined ? null : overrides.preset,
+      onMissing,
+    }
+    function DemoPanel() {
+      const { active, setActive, onLoaded } = useActiveCollection()
+      return (
+        <DocumentsPanel
+          active={active}
+          onActiveChange={setActive}
+          onCollections={(loaded: Collection[]) => onLoaded(loaded.map((c) => c.name))}
+          demo={demo}
+        />
+      )
+    }
+    render(<DemoPanel />)
+    return { onMissing }
+  }
+
+  const stubCollections = (body: unknown[] = []) =>
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json(body))))
+
+  it('shows the public notice with the TTL the server gave', async () => {
+    stubCollections()
+    demoPanel()
+    expect(
+      await screen.findByText(
+        'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('explains that uploading needs a code or key, and opens the panel instead of uploading', async () => {
+    stubCollections()
+    const { onMissing } = demoPanel()
+    expect(
+      await screen.findByText('Uploading needs a demo code or your own key.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('PDF', { selector: 'input' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Add a key or demo code' }))
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(uploadDocument).not.toHaveBeenCalled()
+  })
+
+  it('uploads with the credentials it is given', async () => {
+    stubCollections()
+    vi.mocked(uploadDocument).mockResolvedValue(undefined)
+    demoPanel({ credentials: { preset: 'openai', secret: 'sk-k' }, preset })
+    const input = await screen.findByLabelText('PDF', { selector: 'input' })
+    expect(input).not.toBeDisabled()
+    const file = new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })
+    fireEvent.change(input, { target: { files: [file] } })
+    await vi.waitFor(() =>
+      expect(uploadDocument).toHaveBeenCalledWith('default', file, expect.any(Function), {
+        preset: 'openai',
+        secret: 'sk-k',
+      }),
+    )
+  })
+
+  it('hides the upload control for a preset with no embedding model, and says why', async () => {
+    stubCollections()
+    demoPanel({
+      credentials: { preset: 'synthetic', secret: 'sk-s' },
+      preset: { ...preset, id: 'synthetic', label: 'Synthetic', embedding_model: null },
+    })
+    expect(
+      await screen.findByText(
+        'Synthetic has no embedding model, so it cannot take uploads. Pick another preset in the key panel to upload.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('PDF', { selector: 'input' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Try a sample PDF' })).toBeNull()
+  })
+
+  it('shows each collection’s embedding model', async () => {
+    stubCollections([
+      {
+        id: 1,
+        name: 'default',
+        embedding_preset: 'openai',
+        embedding_model: 'text-embedding-3-small',
+        documents: [readyDoc],
+      },
+    ])
+    demoPanel({ credentials: { preset: 'openai', secret: 'sk-k' }, preset })
+    expect(
+      await screen.findByText('Embedded with text-embedding-3-small'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the backend’s plain refusal when an upload used another preset', async () => {
+    stubCollections()
+    const message =
+      'This collection was embedded with text-embedding-3-small; switch back to OpenAI to ask about it'
+    vi.mocked(uploadDocument).mockRejectedValue(new Error(message))
+    demoPanel({
+      credentials: { preset: 'synthetic', secret: 'sk-s' },
+      preset: { ...preset, id: 'synthetic', label: 'Synthetic' },
+    })
+    const input = await screen.findByLabelText('PDF', { selector: 'input' })
+    fireEvent.change(input, {
+      target: { files: [new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })] },
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+  })
+})

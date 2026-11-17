@@ -1,6 +1,7 @@
 import {
   deleteCollection,
   deleteDocument,
+  getPresets,
   listCollections,
   streamChat,
   uploadDocument,
@@ -16,6 +17,7 @@ class FakeXhr {
   responseText = ''
   method = ''
   url = ''
+  headers: Record<string, string> = {}
   body: FormData | null = null
   constructor() {
     FakeXhr.last = this
@@ -23,6 +25,9 @@ class FakeXhr {
   open(method: string, url: string) {
     this.method = method
     this.url = url
+  }
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value
   }
   send(body: FormData) {
     this.body = body
@@ -63,6 +68,30 @@ describe('uploadDocument', () => {
     const done = uploadDocument('c', file, () => {})
     FakeXhr.last.onerror?.()
     await expect(done).rejects.toThrow(/unreachable/)
+  })
+
+  it('sends the visitor’s credentials as headers only, never in the URL or form', async () => {
+    const done = uploadDocument('c', file, () => {}, { preset: 'openai', secret: 'sk-k' })
+    const xhr = FakeXhr.last
+    expect(xhr.headers).toEqual({ 'X-Model-Preset': 'openai', 'X-Model-Key': 'sk-k' })
+    expect(xhr.url).not.toContain('sk-k')
+    expect([...((xhr.body as FormData).entries())].flat()).not.toContain('sk-k')
+    xhr.status = 201
+    xhr.onload?.()
+    await done
+  })
+
+  it('sends a demo code as X-Demo-Code', async () => {
+    const done = uploadDocument('c', file, () => {}, { preset: 'demo', secret: 'code-1' })
+    expect(FakeXhr.last.headers).toEqual({ 'X-Model-Preset': 'demo', 'X-Demo-Code': 'code-1' })
+    FakeXhr.last.status = 201
+    FakeXhr.last.onload?.()
+    await done
+  })
+
+  it('sends no model headers without credentials', () => {
+    void uploadDocument('c', file, () => {})
+    expect(FakeXhr.last.headers).toEqual({})
   })
 })
 
@@ -186,6 +215,66 @@ describe('streamChat', () => {
   it('throws on a line that is not an event', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(new Response(streamOf('not json\n'))))
     await expect(collect(streamChat('c', 'q'))).rejects.toThrow('malformed answer stream')
+  })
+
+  it('sends the visitor’s key only in the headers, never in the URL or body', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(new Response(streamOf('{"type":"done","mode":"fast","model":"m","cost":null}\n'))),
+    )
+    vi.stubGlobal('fetch', fetch)
+    await collect(streamChat('c', 'q', undefined, 'fast', { preset: 'openai', secret: 'sk-k' }))
+    const [url, init] = fetch.mock.calls[0]
+    expect(url).toBe('/api/collections/c/chat')
+    expect(init?.headers).toEqual({
+      'Content-Type': 'application/json',
+      'X-Model-Preset': 'openai',
+      'X-Model-Key': 'sk-k',
+    })
+    expect(String(init?.body)).not.toContain('sk-k')
+  })
+
+  it('sends a demo code as X-Demo-Code, never as X-Model-Key', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(new Response(streamOf('{"type":"done","mode":"fast","model":"m","cost":null}\n'))),
+    )
+    vi.stubGlobal('fetch', fetch)
+    await collect(streamChat('c', 'q', undefined, 'fast', { preset: 'demo', secret: 'code-1' }))
+    expect(fetch.mock.calls[0][1]?.headers).toEqual({
+      'Content-Type': 'application/json',
+      'X-Model-Preset': 'demo',
+      'X-Demo-Code': 'code-1',
+    })
+  })
+})
+
+describe('getPresets', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns the preset list the page builds its key panel from', async () => {
+    const body = {
+      public_demo: true,
+      upload_ttl_minutes: 45,
+      presets: [
+        {
+          id: 'openai',
+          label: 'OpenAI',
+          kind: 'key',
+          chat_model: 'gpt-5-nano',
+          embedding_model: 'text-embedding-3-small',
+        },
+      ],
+    }
+    const fetch = vi.fn(() => Promise.resolve(Response.json(body)))
+    vi.stubGlobal('fetch', fetch)
+    expect(await getPresets()).toEqual(body)
+    expect(fetch).toHaveBeenCalledWith('/api/presets', { signal: undefined })
+  })
+
+  it('throws the JSON detail of an error', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(Response.json({ detail: 'database unavailable' }, { status: 503 })),
+    )
+    await expect(getPresets()).rejects.toThrow('database unavailable')
   })
 })
 

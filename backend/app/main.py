@@ -39,6 +39,9 @@ class PresetInfo(BaseModel):
 class PresetList(BaseModel):
     # Whether every model call needs a demo code or the visitor's own key.
     public_demo: bool
+    # The page's public notice names it: uploads are deleted after this many minutes.
+    # `None` outside a public demo, where nothing is deleted on a timer.
+    upload_ttl_minutes: int | None
     presets: list[PresetInfo]
 
 
@@ -104,8 +107,10 @@ def create_app(
 
     @app.get("/presets", summary="The model presets a visitor can pick")
     def presets() -> PresetList:
+        demo = public_demo()
         return PresetList(
-            public_demo=public_demo(),
+            public_demo=demo,
+            upload_ttl_minutes=int(session.upload_ttl().total_seconds() // 60) if demo else None,
             presets=[PresetInfo(**p) for p in public_presets(app.state.presets)],
         )
 

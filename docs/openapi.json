@@ -1229,6 +1229,17 @@
             "type": "boolean",
             "title": "Public Demo"
           },
+          "upload_ttl_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Ttl Minutes"
+          },
           "presets": {
             "items": {
               "$ref": "#/components/schemas/PresetInfo"
@@ -1240,6 +1251,7 @@
         "type": "object",
         "required": [
           "public_demo",
+          "upload_ttl_minutes",
           "presets"
         ],
         "title": "PresetList"

@@ -426,3 +426,44 @@ describe('Chat', () => {
     })
   })
 })
+
+describe('Chat in a public demo', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('makes no model call without credentials: it reports the missing key instead', () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    render(<Chat collection="default" modelAccess={{ credentials: null, onMissing }} />)
+    expect(screen.getByText('Asking needs a demo code or your own key.')).toBeInTheDocument()
+    ask('one')
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalled()
+    // The question stays, ready to ask once a key is saved.
+    expect(screen.getByLabelText('Ask a question')).toHaveValue('one')
+    expect(screen.queryByRole('article', { name: 'Answer' })).toBeNull()
+  })
+
+  it('asks with the credentials it is given, as request headers', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    render(
+      <Chat
+        collection="default"
+        modelAccess={{ credentials: { preset: 'demo', secret: 'code-1' }, onMissing }}
+      />,
+    )
+    expect(screen.queryByText('Asking needs a demo code or your own key.')).toBeNull()
+    ask('one')
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    expect(onMissing).not.toHaveBeenCalled()
+    expect(fetch.mock.calls[0][1]?.headers).toEqual({
+      'Content-Type': 'application/json',
+      'X-Model-Preset': 'demo',
+      'X-Demo-Code': 'code-1',
+    })
+  })
+})
