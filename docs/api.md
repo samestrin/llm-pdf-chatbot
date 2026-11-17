@@ -20,7 +20,7 @@ Every collection, document and chat route accepts the visitor's model credential
 
 A request with none of these headers uses the server's `LLM_*` endpoint, as in the single shared mode. With `PUBLIC_DEMO=true` the server's endpoint is not used for a visitor's chat or upload: a request without credentials fails with `PUBLIC_DEMO is on: a model call needs a demo code or a preset key`, in the chat stream's `error` event or as the document's failure reason.
 
-A bad header combination is a 400 whose detail names headers, never a value: `X-Model-Key` and `X-Demo-Code` together; `X-Demo-Code` without the `demo` preset; `X-Model-Key` without `X-Model-Preset`; a preset without its key; the `demo` preset without a code; an unknown preset; or a key or code that is not in the expected shape. A demo code when `DEMO_GATEWAY_URL` is unset is 503 (`demo codes are not available here`).
+A bad header combination is a 400 whose detail names headers, never a value: `X-Model-Key` and `X-Demo-Code` together; `X-Demo-Code` with a preset other than `demo`; `X-Model-Key` without `X-Model-Preset`; a preset without its key; the `demo` preset without a code; an unknown preset; or a key or code that is not in the expected shape. A demo code when `DEMO_GATEWAY_URL` is unset is 503 (`demo codes are not available here`).
 
 `GET /presets` tells the page what it may offer. It holds no base URL, gateway address or key; the `demo` preset is listed only when `DEMO_GATEWAY_URL` is set, and a preset with no embedding model has `"embedding_model": null`:
 
@@ -44,7 +44,7 @@ Outside a public demo `public_demo` is `false` and `upload_ttl_minutes` is `null
 | 400 | A bad model-header combination, as above. |
 | 403 | An upload or either delete whose `Origin` is not the app's (`DEMO_ORIGIN`, or else the request's own host), or a browser request (one with `Sec-Fetch-Site`) that sent no `Origin`: `This request came from another site and was refused`; or a change to the read-only sample: `The sample collection is read-only`. Nothing is changed. |
 | 404 | A collection, document, page or PDF of another session, exactly as for one that does not exist. |
-| 409 | The upload past a session cap (`DEMO_SESSION_MAX_COLLECTIONS` or `DEMO_SESSION_MAX_UPLOAD_MB`), until a delete frees room; or a question or upload with a preset or embedding model other than the collection's: `This collection was embedded with <model>; switch back to <preset> to ask about it`. |
+| 409 | The upload past a session cap (`DEMO_SESSION_MAX_COLLECTIONS` or `DEMO_SESSION_MAX_UPLOAD_MB`), until a delete or the TTL frees room; or a question or upload with a preset or embedding model other than the collection's: `This collection was embedded with <model>; switch back to <preset> to ask about it`. |
 
 Reads and chat are not checked against `Origin`; only the session cookie writes are. Without `PUBLIC_DEMO` there is no Origin check, no cap and no sample rule.
 
