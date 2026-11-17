@@ -32,7 +32,7 @@ from typing import Protocol
 from sqlalchemy import ColumnElement, Engine, exists, func, insert, literal_column, select, update
 from sqlalchemy.engine import Connection
 
-from app.credentials import Credentials, client_for
+from app.credentials import Credentials, client_for, plain_model_error
 from app.db import (
     TEXT_SEARCH_CONFIG,
     chunk_embeddings,
@@ -190,10 +190,14 @@ class IngestWorker:
             if not self._exists(document_id):
                 return
             log.warning("ingestion of %s failed: %s", document_id, exc)
-            if isinstance(exc, LLMConnectionError):
-                reason = "the model endpoint is unreachable (check LLM_BASE_URL)"
-            else:
-                reason = str(exc) or type(exc).__name__
+            # A key or code failure says the shared plain wording; nothing from the
+            # endpoint's body goes into the reason the client reads.
+            reason = plain_model_error(exc, credentials)
+            if reason is None:
+                if isinstance(exc, LLMConnectionError):
+                    reason = "the model endpoint is unreachable (check LLM_BASE_URL)"
+                else:
+                    reason = str(exc) or type(exc).__name__
             with self.engine.begin() as conn:
                 _set(conn, document_id, state="failed", error=reason)
 
