@@ -141,13 +141,25 @@ def test_a_deep_run_with_a_rejected_key_ends_in_the_plain_error(engine, provider
     assert events[-1] == {"type": "error", "message": "The key was rejected by OpenAI"}
 
 
+@pytest.mark.parametrize("headers", [KEY_HEADERS, CODE_HEADERS], ids=["key", "demo code"])
+def test_another_http_status_keeps_the_existing_wording(engine, provider, headers):
+    # A 500 is not a key or code failure: it must not say the key was rejected or the
+    # code used up, and it still shows nothing from the endpoint's body.
+    add_document(engine, "papers", [GLACIER])
+    embedded_with(engine, headers.get("X-Model-Preset", "demo"))
+    provider.responder = chat_fails_with(500)
+    resp, events = chat(engine, headers)
+    assert events == [
+        {"type": "error", "message": "the answer failed: the model endpoint returned HTTP 500"}
+    ]
+    assert UPSTREAM_MARKER not in resp.text
+
+
 # --- the ingest failure reason in the status JSON ---
 
 
 @pytest.mark.parametrize("status", [401, 403])
-def test_a_rejected_key_fails_the_upload_with_the_plain_error(
-    db_engine, provider, uploads, status
-):
+def test_a_rejected_key_fails_the_upload_with_the_plain_error(db_engine, provider, uploads, status):
     provider.responder = upstream_error(status)
     status_body, _ = failed_status(db_engine, provider, KEY_HEADERS, uploads)
     assert status_body["state"] == "failed"
@@ -164,9 +176,7 @@ def test_a_used_up_or_expired_demo_code_fails_the_upload_with_the_plain_error(
     assert status_body["error"] == "This demo code is used up or expired"
 
 
-def test_a_provider_rate_limit_fails_the_upload_with_the_plain_error(
-    db_engine, provider, uploads
-):
+def test_a_provider_rate_limit_fails_the_upload_with_the_plain_error(db_engine, provider, uploads):
     provider.responder = upstream_error(429)
     status_body, _ = failed_status(db_engine, provider, KEY_HEADERS, uploads)
     assert status_body["state"] == "failed"
