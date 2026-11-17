@@ -529,6 +529,48 @@ describe('DocumentsPanel in a public demo', () => {
     expect(screen.queryByRole('button', { name: 'Try a sample PDF' })).toBeNull()
   })
 
+  it('the sample button opens the panel instead of uploading without a code or key', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      url === '/samples/sample.pdf'
+        ? Promise.resolve(new Response('%PDF-1.4', { status: 200 }))
+        : Promise.resolve(Response.json([])),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(uploadDocument).mockResolvedValue(undefined)
+    const { onMissing } = demoPanel()
+    // The empty state offers the sample; the collection is named, so the button enables.
+    fireEvent.click(await screen.findByRole('button', { name: 'Try a sample PDF' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Uploading needs a demo code or your own key.',
+    )
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(uploadDocument).not.toHaveBeenCalled()
+    // Not even the sample PDF is fetched: no upload work starts at all.
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain('/samples/sample.pdf')
+  })
+
+  it('the sample upload carries the visitor’s credentials', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        url === '/samples/sample.pdf'
+          ? Promise.resolve(new Response('%PDF-1.4', { status: 200 }))
+          : Promise.resolve(Response.json([])),
+      ),
+    )
+    vi.mocked(uploadDocument).mockResolvedValue(undefined)
+    demoPanel({ credentials: { preset: 'openai', secret: 'sk-k' }, preset })
+    fireEvent.click(await screen.findByRole('button', { name: 'Try a sample PDF' }))
+    await vi.waitFor(() =>
+      expect(uploadDocument).toHaveBeenCalledWith(
+        'default',
+        expect.objectContaining({ name: 'sample.pdf', type: 'application/pdf' }),
+        expect.any(Function),
+        { preset: 'openai', secret: 'sk-k' },
+      ),
+    )
+  })
+
   it('shows each collection’s embedding model', async () => {
     stubCollections([
       {
@@ -604,6 +646,60 @@ describe('DocumentsPanel retry in a public demo', () => {
     fireEvent.click(retry)
     expect(onMissing).toHaveBeenCalledTimes(1)
     expect(uploadDocument).toHaveBeenCalledTimes(1)
+  })
+
+  it('a retry after switching to a preset with no embedding model is refused, with the reason', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json([]))))
+    const upload = vi.mocked(uploadDocument)
+    upload.mockRejectedValueOnce(new Error('upload failed'))
+    upload.mockResolvedValue(undefined)
+    const onMissing = vi.fn()
+    const openai: Preset = {
+      id: 'openai',
+      label: 'OpenAI',
+      kind: 'key',
+      chat_model: 'gpt-5-nano',
+      embedding_model: 'text-embedding-3-small',
+    }
+    const active = { name: 'default', draft: false }
+    const noop = () => {}
+    const { rerender } = render(
+      <DocumentsPanel
+        active={active}
+        onActiveChange={noop}
+        demo={{
+          ttlMinutes: 45,
+          credentials: { preset: 'openai', secret: 'sk-k' },
+          preset: openai,
+          onMissing,
+        }}
+      />,
+    )
+    const input = await screen.findByLabelText('PDF', { selector: 'input' })
+    fireEvent.change(input, {
+      target: { files: [new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })] },
+    })
+    const retry = await screen.findByRole('button', { name: 'Retry upload' })
+    expect(upload).toHaveBeenCalledTimes(1)
+    // The visitor switches to a preset that cannot embed, then retries the failed upload.
+    rerender(
+      <DocumentsPanel
+        active={active}
+        onActiveChange={noop}
+        demo={{
+          ttlMinutes: 45,
+          credentials: { preset: 'synthetic', secret: 'sk-s' },
+          preset: { ...openai, id: 'synthetic', label: 'Synthetic', embedding_model: null },
+          onMissing,
+        }}
+      />,
+    )
+    fireEvent.click(retry)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Synthetic has no embedding model, so it cannot take uploads.',
+    )
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(onMissing).not.toHaveBeenCalled()
   })
 })
 

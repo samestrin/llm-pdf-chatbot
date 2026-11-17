@@ -235,6 +235,32 @@ test('the upload control explains it needs a code or key, and opens the panel', 
   expect(api.calls.filter((c) => c.startsWith('POST /api/collections'))).toEqual([])
 })
 
+test('the sample PDF needs a code or key too: the panel opens, then the upload carries the headers', async ({
+  page,
+  api,
+}) => {
+  // An empty collection, so the empty state offers the sample button.
+  api.on('GET', '/api/collections', json([{ id: 1, name: 'default', documents: [] }]))
+  let headers: Record<string, string> = {}
+  api.on('POST', '/api/collections/default/documents', (route) => {
+    headers = route.request().headers()
+    return route.fulfill({ status: 201, json: { id: 's' } })
+  })
+  await page.goto('/')
+  const documents = page.getByRole('complementary', { name: 'Documents' })
+  await documents.getByRole('button', { name: 'Try a sample PDF' }).click()
+  await expect(page.getByRole('region', { name: 'Model key' })).toBeVisible()
+  await expect(documents.getByRole('alert')).toHaveText(
+    'Uploading needs a demo code or your own key.',
+  )
+  expect(api.calls.filter((c) => c.startsWith('POST /api/collections'))).toEqual([])
+  // With a key saved, the same click uploads, and the key travels only in headers.
+  await saveKey(page, 'OpenAI', KEY)
+  await documents.getByRole('button', { name: 'Try a sample PDF' }).click()
+  await expect.poll(() => headers['x-model-key']).toBe(KEY)
+  expect(headers['x-model-preset']).toBe('openai')
+})
+
 test('a preset with no embedding model cannot take uploads, and the page says why', async ({
   page,
 }) => {
