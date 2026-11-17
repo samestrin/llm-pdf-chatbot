@@ -8,7 +8,7 @@
     "/collections/{collection}/documents": {
       "post": {
         "summary": "Upload Document",
-        "description": "Upload a PDF into the named collection, creating the collection if it is new, and queue it for ingestion (reading, keyword index, embeddings) in the background, embedded with the request's model preset and key when it sends them. Non-PDF content and PDFs over the page limit return 422; files over the size limit return 413. A collection embedded with another preset or embedding model returns 409. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "Upload a PDF into the named collection, creating the collection if it is new, and queue it for ingestion (reading, keyword index, embeddings) in the background, embedded with the request's model preset and key when it sends them. Non-PDF content and PDFs over the page limit return 422; files over the size limit return 413. A collection embedded with another preset or embedding model returns 409. In a public demo an upload that would pass the session's cap on collections or on uploaded bytes returns 409 until a delete frees room. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "upload_document_collections__collection__documents_post",
         "parameters": [
           {
@@ -100,6 +100,26 @@
               }
             }
           },
+          "403": {
+            "description": "`The sample collection is read-only`, or `This request came from another site and was refused` in a public demo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another preset or embedding model, or in a public demo the session's collection or upload cap is reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -116,7 +136,7 @@
     "/documents/{document_id}/status": {
       "get": {
         "summary": "Document Status",
-        "description": "Where a document's ingestion is: its state (`queued`, `processing`, `ready`, or `failed` with the reason), how many pages were read, and, once its pages are read, each page with the method that read it (`text_layer` or `tesseract` from OCR, `pymupdf` from the text layer fallback) and why OCR failed on it, if it did. Pages no method could read are listed under `failures` with the reason. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "Where a document's ingestion is: its state (`queued`, `processing`, `ready`, or `failed` with the reason), how many pages were read, and, once its pages are read, each page with the method that read it (`text_layer` or `tesseract` from OCR, `pymupdf` from the text layer fallback) and why OCR failed on it, if it did. Pages no method could read are listed under `failures` with the reason. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "document_status_documents__document_id__status_get",
         "parameters": [
           {
@@ -212,7 +232,7 @@
     "/collections": {
       "get": {
         "summary": "List Collections",
-        "description": "Every collection by name, each with its documents in upload order. A document has its display file name, page count, size and, under `status`, the same status fields as `GET /documents/{document_id}/status`. Deleting a collection's last document removes the collection, so a listed collection normally has documents. Each collection names the preset and embedding model it was embedded with (null for the server's own model; it is asked only with them) and whether it is `read_only`. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "Every collection by name, each with its documents in upload order. A document has its display file name, page count, size and, under `status`, the same status fields as `GET /documents/{document_id}/status`. Deleting a collection's last document removes the collection, so a listed collection normally has documents. Each collection names the preset and embedding model it was embedded with (null for the server's own model; it is asked only with them) and whether it is `read_only`. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "list_collections_collections_get",
         "parameters": [
           {
@@ -302,7 +322,7 @@
     "/documents/{document_id}/pdf": {
       "get": {
         "summary": "Document Pdf",
-        "description": "The stored PDF, inline (`application/pdf`, `X-Content-Type-Options: nosniff`), for the browser's PDF viewer. The id is the one the server generated at upload; any other id, path-like or not, returns 404. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "The stored PDF, inline (`application/pdf`, `X-Content-Type-Options: nosniff`), for the browser's PDF viewer. The id is the one the server generated at upload; any other id, path-like or not, returns 404. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "document_pdf_documents__document_id__pdf_get",
         "parameters": [
           {
@@ -407,7 +427,7 @@
     "/documents/{document_id}/pages/{page}": {
       "get": {
         "summary": "Document Page",
-        "description": "One page's stored text (pages count from 1): the exact text that chunk offsets and so citations index into, with the method that read it. A page no method could read has `text` null and the reason in `error`. A page outside the document returns 404; a page the worker has not read yet returns 409. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "One page's stored text (pages count from 1): the exact text that chunk offsets and so citations index into, with the method that read it. A page no method could read has `text` null and the reason in `error`. A page outside the document returns 404; a page the worker has not read yet returns 409. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "document_page_documents__document_id__pages__page__get",
         "parameters": [
           {
@@ -512,7 +532,7 @@
     "/documents/{document_id}": {
       "delete": {
         "summary": "Delete Document",
-        "description": "Delete a document: its stored file, its row, and (by foreign-key cascade) every row derived from it. When it was the last document of its collection, the collection is removed too. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "Delete a document: its stored file, its row, and (by foreign-key cascade) every row derived from it. When it was the last document of its collection, the collection is removed too. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "delete_document_documents__document_id__delete",
         "parameters": [
           {
@@ -584,7 +604,7 @@
             "description": "Deleted; no body"
           },
           "403": {
-            "description": "`The sample collection is read-only`",
+            "description": "`The sample collection is read-only`, or `This request came from another site and was refused` in a public demo",
             "content": {
               "application/json": {
                 "schema": {
@@ -619,7 +639,7 @@
     "/collections/{collection}": {
       "delete": {
         "summary": "Delete Collection",
-        "description": "Delete an empty collection by name. A collection that still has documents is never deleted here (409 `collection is not empty`): delete its documents first, and the last delete removes the collection. An unknown name returns 404. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403).",
+        "description": "Delete an empty collection by name. A collection that still has documents is never deleted here (409 `collection is not empty`): delete its documents first, and the last delete removes the collection. An unknown name returns 404. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "delete_collection_collections__collection__delete",
         "parameters": [
           {
@@ -693,7 +713,7 @@
             "description": "Deleted; no body"
           },
           "403": {
-            "description": "`The sample collection is read-only`",
+            "description": "`The sample collection is read-only`, or `This request came from another site and was refused` in a public demo",
             "content": {
               "application/json": {
                 "schema": {

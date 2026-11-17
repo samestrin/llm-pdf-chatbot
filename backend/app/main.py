@@ -87,6 +87,8 @@ def create_app(
     )
     app.state.engine = engine or make_engine()
     app.state.limits = documents.Limits.from_env()
+    # A visitor session's caps; outside a public demo there are none.
+    app.state.session_caps = session.SessionCaps.from_env() if public_demo() else None
     app.state.embedder = embedder
     app.state.llm = llm
     app.state.presets = PRESETS

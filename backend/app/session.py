@@ -9,6 +9,13 @@ read-only sample: every session can read and ask them, none can change or delete
 A visitor's collection is deleted, with its documents, chunks and files, once it is older
 than `DEMO_UPLOAD_TTL_MINUTES`.
 
+The cookie goes with any request the browser sends here, so every write it allows (an
+upload, either delete) is refused (403) when it comes from another site: its `Origin` is not
+the app's, or a browser sent none. A session has caps on how many collections it keeps and
+how many bytes its documents hold (`DEMO_SESSION_MAX_COLLECTIONS`,
+`DEMO_SESSION_MAX_UPLOAD_MB`); the upload past either is refused (409) until a delete or the
+TTL frees room.
+
 Outside a public demo there is no cookie: every request is the shared owner, as before.
 The cookie is signed with `SESSION_SECRET`; without it, with a secret made at startup, so a
 restart starts every visitor on a new session.
@@ -23,11 +30,13 @@ import secrets
 import threading
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, exists, func, select, text
 from sqlalchemy.engine import Connection, Row
 from starlette.requests import cookie_parser
 
@@ -42,6 +51,9 @@ SESSION_ID = re.compile(r"[0-9a-f]{32}")
 DEFAULT_UPLOAD_TTL_MINUTES = 60
 SWEEP_SECONDS = 60.0
 READ_ONLY = "The sample collection is read-only"
+CROSS_SITE = "This request came from another site and was refused"
+DEFAULT_SESSION_MAX_COLLECTIONS = 5
+DEFAULT_SESSION_MAX_UPLOAD_MB = 100
 
 
 def session_secret(env: Mapping[str, str] | None = None) -> bytes:
@@ -135,6 +147,116 @@ def require_owner(session: str, owner: str) -> None:
     write. Another session's collection never gets here: it is not found."""
     if owner != session:
         raise HTTPException(403, READ_ONLY)
+
+
+def app_origins(env: Mapping[str, str] | None = None) -> set[str]:
+    """The origins set in `DEMO_ORIGIN` (comma-separated), as a browser writes them."""
+    env = os.environ if env is None else env
+    return {o.strip().rstrip("/").lower() for o in env.get("DEMO_ORIGIN", "").split(",")} - {""}
+
+
+def _same_host(origin: str, host: str) -> bool:
+    """Whether `origin` names the host the request was sent to. The port is not compared:
+    the frontend's nginx forwards the host without it."""
+    try:
+        parts = urlsplit(origin)
+        return (
+            parts.scheme in {"http", "https"} and parts.hostname == urlsplit(f"//{host}").hostname
+        )
+    except ValueError:
+        return False
+
+
+def same_origin(request: Request) -> None:
+    """In a public demo, a 403 for a write from another site: one whose `Origin` is not the
+    app's (`DEMO_ORIGIN` when set, else the request's own host), or a browser's with none
+    (a browser sends `Sec-Fetch-Site`, and always `Origin` with a POST or DELETE). A request
+    with neither is not a browser's, so holds no visitor's cookie, and goes through."""
+    if not public_demo():
+        return
+    origin = request.headers.get("origin")
+    if origin is None:
+        if "sec-fetch-site" in request.headers:
+            raise HTTPException(403, CROSS_SITE)
+        return
+    configured = app_origins()
+    if configured:
+        allowed = origin.rstrip("/").lower() in configured
+    else:
+        allowed = _same_host(origin, request.headers.get("host", ""))
+    if not allowed:
+        raise HTTPException(403, CROSS_SITE)
+
+
+def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
+    raw = env.get(name, "").strip()
+    if not raw:
+        return default
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError(f"{name} must be a whole number above 0, got {raw!r}")
+    return int(raw)
+
+
+@dataclass(frozen=True)
+class SessionCaps:
+    """What one visitor session may hold: collections, and bytes of uploaded documents."""
+
+    collections: int
+    upload_bytes: int
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "SessionCaps":
+        env = os.environ if env is None else env
+        return cls(
+            collections=_positive_int(
+                env, "DEMO_SESSION_MAX_COLLECTIONS", DEFAULT_SESSION_MAX_COLLECTIONS
+            ),
+            upload_bytes=_positive_int(
+                env, "DEMO_SESSION_MAX_UPLOAD_MB", DEFAULT_SESSION_MAX_UPLOAD_MB
+            )
+            * 1024
+            * 1024,
+        )
+
+
+def cap_refusal(
+    conn: Connection, session: str, collection_id: int, size: int, caps: SessionCaps
+) -> str | None:
+    """Why adding `size` bytes to the session's collection `collection_id` would pass a cap,
+    or `None` when it would not. Run it in the transaction that adds the document: on
+    Postgres it holds the session's lock until then, so two uploads cannot both fit."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:session))"), {"session": session})
+    # An empty collection is not counted: it is the one being made, or one about to go.
+    kept = set(
+        conn.execute(
+            select(collections.c.id).where(
+                collections.c.session_id == session,
+                exists().where(documents.c.collection_id == collections.c.id),
+            )
+        ).scalars()
+    )
+    if collection_id not in kept and len(kept) >= caps.collections:
+        return (
+            f"This session has reached its limit of {caps.collections} collections; "
+            "delete one to make another"
+        )
+    used = conn.execute(
+        select(func.coalesce(func.sum(documents.c.size_bytes), 0))
+        .join(collections, collections.c.id == documents.c.collection_id)
+        .where(collections.c.session_id == session)
+    ).scalar_one()
+    if used + size > caps.upload_bytes:
+        return (
+            f"This session has reached its upload limit of {_megabytes(caps.upload_bytes)}; "
+            "delete a document to upload more"
+        )
+    return None
+
+
+def _megabytes(size: int) -> str:
+    mb = size / (1024 * 1024)
+    return f"{mb:g} MB" if mb >= 1 else f"{size} bytes"
 
 
 def upload_ttl(env: Mapping[str, str] | None = None) -> timedelta:

@@ -66,10 +66,17 @@ These apply when you run the backend outside compose (for example `uv run uvicor
 | `OCR_TIMEOUT_SECONDS` | 120 | Seconds to wait for the OCR service. |
 | `SESSION_SECRET` | empty (a new secret at each start) | Signs the public demo's session cookie. Set it to a long random value so visitors keep their session across a restart and every backend process accepts the same cookie. Secret. |
 | `DEMO_UPLOAD_TTL_MINUTES` | 60 | In a public demo, minutes after which a visitor's collection is deleted with its documents, chunks and files. A whole number above 0. |
+| `DEMO_ORIGIN` | empty (the request's own host) | In a public demo, the app's origin as the browser sees it, for example `https://pdfchat.example.com`; several may be given, comma-separated. An upload or delete from any other origin is refused. When empty, the `Origin` header's host must be the request's `Host` (the port is not compared). Set it when a proxy changes the `Host` header, as Vite's dev server does. |
+| `DEMO_SESSION_MAX_COLLECTIONS` | 5 | In a public demo, how many collections one session may keep. A whole number above 0. |
+| `DEMO_SESSION_MAX_UPLOAD_MB` | 100 | In a public demo, how many megabytes of PDFs one session's documents may hold in all. A whole number above 0. |
 
 ## Sessions in a public demo
 
 With `PUBLIC_DEMO=true` each browser gets a signed, HttpOnly session cookie (`pdfchat_session`; `Secure` when the request came over HTTPS or with `X-Forwarded-Proto: https`). There is no account behind it. A collection belongs to the session that made it, so two visitors can each have a collection called `papers`, and every collection, document, page, PDF, delete and chat route answers 404 for another session's collection or document, exactly as for one that does not exist. A job deletes a visitor's collection `DEMO_UPLOAD_TTL_MINUTES` after it was made (at startup and then every minute).
+
+Writes from another site: the browser sends the session cookie with any request to the app, so in a public demo an upload, a document delete or a collection delete is refused (403 `This request came from another site and was refused`) when its `Origin` is not the app's, or when a browser sent it without an `Origin` (it sends `Sec-Fetch-Site`). A request with neither header, from a script or `curl`, holds no visitor's cookie and goes through. Reads and chat are not checked.
+
+Per-session caps: an upload that would give a session more than `DEMO_SESSION_MAX_COLLECTIONS` collections, or more than `DEMO_SESSION_MAX_UPLOAD_MB` of documents, is refused (409, for example `This session has reached its limit of 5 collections; delete one to make another`) and stores nothing. Deleting a document, or the TTL, frees the room. The sample does not count.
 
 The sample: a collection uploaded with `PUBLIC_DEMO` off belongs to the shared owner, outside every visitor session. In the demo every session sees it, reads it and asks it, and none can upload to it or delete it (403 `The sample collection is read-only`); it never expires. Upload it with a preset's headers (`X-Model-Preset` and `X-Model-Key`, or `X-Demo-Code`) so visitors can ask it with that preset.
 

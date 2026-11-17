@@ -8,6 +8,7 @@ collection is questioned only with the preset and embedding model it was embedde
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -587,6 +588,7 @@ FOREIGN = [
     {"Origin": "https://evil.example"},
     {"Origin": "http://testserver.evil.example"},
     {"Origin": "null"},
+    {"Origin": "http://[testserver"},
     # A browser always sends Origin with a POST or DELETE; one that does not is refused.
     {"Sec-Fetch-Site": "cross-site"},
     {"Sec-Fetch-Site": "same-origin"},
@@ -748,6 +750,20 @@ def test_the_caps_are_per_session(db_engine, demo):
         assert upload(a, "two").status_code == 409
         b = TestClient(app)
         uploaded(b, "one")
+
+
+def test_uploads_at_once_cannot_all_fit_under_a_cap(postgres_engine, demo, uploads):
+    """The session's lock makes them take turns, so only the first fits."""
+    with TestClient(create_app(postgres_engine)) as client:
+        client.get("/presets")  # one session for every upload below
+        caps(client, collections=1, upload_bytes=len(PDF))
+        with ThreadPoolExecutor(6) as pool:
+            done = list(pool.map(lambda n: upload(client, f"c{n}"), range(6)))
+        client.app.state.worker.join()
+    assert sorted(r.status_code for r in done) == [201] + [409] * 5, [r.text for r in done]
+    assert count(postgres_engine, collections) == 1
+    assert count(postgres_engine, documents) == 1
+    assert len(list(uploads.glob("*.pdf"))) == 1
 
 
 def test_the_sample_does_not_count_against_a_cap(db_engine, sample):
