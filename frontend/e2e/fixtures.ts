@@ -40,6 +40,11 @@ export const test = base.extend<{ api: ApiMock }>({
       const handlers = new Map<string, MockHandler>([
         ['GET /api/health', json({ status: 'ok' })],
         ['GET /api/collections', json([])],
+        // Not a public demo unless a test says so: no key panel, no notice.
+        [
+          'GET /api/presets',
+          json({ public_demo: false, upload_ttl_minutes: null, presets: [] }),
+        ],
       ])
       const calls: string[] = []
       const unmocked: string[] = []

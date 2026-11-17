@@ -426,3 +426,67 @@ describe('Chat', () => {
     })
   })
 })
+
+describe('Chat in a public demo', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('makes no model call without credentials: it reports the missing key instead', () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    render(<Chat collection="default" modelAccess={{ credentials: null, onMissing }} />)
+    expect(screen.getByText('Asking needs a demo code or your own key.')).toBeInTheDocument()
+    ask('one')
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalled()
+    // The question stays, ready to ask once a key is saved.
+    expect(screen.getByLabelText('Ask a question')).toHaveValue('one')
+    expect(screen.queryByRole('article', { name: 'Answer' })).toBeNull()
+  })
+
+  it('asks with the credentials it is given, as request headers', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    render(
+      <Chat
+        collection="default"
+        modelAccess={{ credentials: { preset: 'demo', secret: 'code-1' }, onMissing }}
+      />,
+    )
+    expect(screen.queryByText('Asking needs a demo code or your own key.')).toBeNull()
+    ask('one')
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    expect(onMissing).not.toHaveBeenCalled()
+    expect(fetch.mock.calls[0][1]?.headers).toEqual({
+      'Content-Type': 'application/json',
+      'X-Model-Preset': 'demo',
+      'X-Demo-Code': 'code-1',
+    })
+  })
+})
+
+describe('Chat retry in a public demo', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('a retry after the key was cleared opens the panel instead of calling the model', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(ndjson({ type: 'error', message: 'The key was rejected by OpenAI' })),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    const credentials = { preset: 'openai', secret: 'sk-k' }
+    const { rerender } = render(
+      <Chat collection="default" modelAccess={{ credentials, onMissing }} />,
+    )
+    ask('one')
+    const retry = await screen.findByRole('button', { name: 'Retry' })
+    // The visitor clears the key, then retries the failed answer.
+    rerender(<Chat collection="default" modelAccess={{ credentials: null, onMissing }} />)
+    fireEvent.click(retry)
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})

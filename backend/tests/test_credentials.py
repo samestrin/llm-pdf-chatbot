@@ -404,6 +404,23 @@ def test_public_presets_matches_the_route(monkeypatch, no_gateway):
     assert presets_body(monkeypatch)["presets"] == public_presets(load_presets())
 
 
+def test_get_presets_names_the_upload_ttl_in_a_public_demo(monkeypatch):
+    """The page's public notice says uploads are deleted after N minutes; N is the server's."""
+    body = presets_body(monkeypatch, PUBLIC_DEMO="true", DEMO_UPLOAD_TTL_MINUTES="45")
+    assert body["upload_ttl_minutes"] == 45
+
+
+def test_get_presets_ttl_defaults_to_60_minutes(monkeypatch):
+    monkeypatch.delenv("DEMO_UPLOAD_TTL_MINUTES", raising=False)
+    body = presets_body(monkeypatch, PUBLIC_DEMO="true")
+    assert body["upload_ttl_minutes"] == 60
+
+
+def test_get_presets_has_no_ttl_outside_a_public_demo(monkeypatch):
+    body = presets_body(monkeypatch, PUBLIC_DEMO="", DEMO_UPLOAD_TTL_MINUTES="45")
+    assert body["upload_ttl_minutes"] is None
+
+
 # --- PUBLIC_DEMO: the env endpoint is not used for visitor actions ---
 
 

@@ -8,7 +8,9 @@ import {
   uploadDocument,
   type Collection,
   type DocumentInfo,
+  type Preset,
 } from './api'
+import type { ModelCredentials } from './modelAccess'
 
 const POLL_MS = 2000
 const SAMPLE_URL = '/samples/sample.pdf'
@@ -129,6 +131,7 @@ export default function DocumentsPanel({
   onActiveChange,
   onCollections,
   onLoadError,
+  demo,
 }: {
   /** The active collection, owned by the page: uploads go into it and the chat asks in it. */
   active: ActiveCollection
@@ -137,12 +140,28 @@ export default function DocumentsPanel({
   onCollections?: (collections: Collection[]) => void
   /** Called with the reason a load failed, and with `null` when one succeeds. */
   onLoadError?: (message: string | null) => void
+  /** Present in a public demo: the notice's TTL, the visitor's credentials and the
+   * chosen preset, and what to do when none are saved (the page opens the key panel). */
+  demo?: {
+    ttlMinutes: number | null
+    credentials: ModelCredentials | null
+    preset: Preset | null
+    onMissing: () => void
+  }
 }) {
   const [collections, setCollections] = useState<Collection[]>([])
   // True until a load answers, and again while a retry is in flight.
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const collection = active.name.trim()
+  // In a public demo an upload embeds with the visitor's credentials: without them
+  // it cannot start, and a preset with no embedding model cannot take uploads at all.
+  const needsKey = demo !== undefined && !demo.credentials
+  const noEmbed =
+    demo !== undefined &&
+    demo.credentials !== null &&
+    demo.preset !== null &&
+    demo.preset.embedding_model === null
   const fileInput = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
@@ -197,11 +216,24 @@ export default function DocumentsPanel({
   }
 
   async function upload(name: string, pdf: File) {
+    // A retry goes through here too: no upload without a key or code, even when the
+    // credentials were cleared after the upload failed. The file is kept for the retry.
+    if (needsKey) {
+      setActionError('Uploading needs a demo code or your own key.')
+      demo?.onMissing()
+      return
+    }
+    if (noEmbed) {
+      setActionError(
+        `${demo?.preset?.label} has no embedding model, so it cannot take uploads.`,
+      )
+      return
+    }
     setActionError(null)
     setFailedUpload(null)
     setProgress(0)
     try {
-      await uploadDocument(name, pdf, setProgress)
+      await uploadDocument(name, pdf, setProgress, demo?.credentials)
       if (fileInput.current) fileInput.current.value = ''
       await refresh()
     } catch (err) {
@@ -218,6 +250,19 @@ export default function DocumentsPanel({
     if (!isPdf(file)) {
       setFailedUpload(null)
       setActionError(`${file.name} is not a PDF. Only PDF files can be uploaded.`)
+      return
+    }
+    if (needsKey) {
+      setFailedUpload(null)
+      setActionError('Uploading needs a demo code or your own key.')
+      demo?.onMissing()
+      return
+    }
+    if (noEmbed) {
+      setFailedUpload(null)
+      setActionError(
+        `${demo?.preset?.label} has no embedding model, so it cannot take uploads.`,
+      )
       return
     }
     if (!collection) {
@@ -261,7 +306,12 @@ export default function DocumentsPanel({
 
   async function onSample() {
     const name = collection
-    if (!name) return
+    if (!name || noEmbed) return
+    if (needsKey) {
+      setActionError('Uploading needs a demo code or your own key.')
+      demo?.onMissing()
+      return
+    }
     setActionError(null)
     setFailedUpload(null)
     setProgress(0)
@@ -270,7 +320,7 @@ export default function DocumentsPanel({
       if (!res.ok) throw new Error(`could not load the sample PDF (${res.status})`)
       const blob = await res.blob()
       const sample = new File([blob], SAMPLE_NAME, { type: 'application/pdf' })
-      await uploadDocument(name, sample, setProgress)
+      await uploadDocument(name, sample, setProgress, demo?.credentials)
       await refresh()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'upload failed')
@@ -307,6 +357,14 @@ export default function DocumentsPanel({
       onDrop={onDrop}
     >
       <h2 id="documents-heading">Documents</h2>
+      {demo && (
+        <p className="demo-notice">
+          Public demo: do not upload private files.{' '}
+          {demo.ttlMinutes !== null
+            ? `Uploads are deleted after ${demo.ttlMinutes} minutes.`
+            : 'Uploads are deleted automatically.'}
+        </p>
+      )}
       <div className="upload-form">
         <CollectionPicker
           names={collections.map((c) => c.name)}
@@ -316,19 +374,34 @@ export default function DocumentsPanel({
           onChange={onActiveChange}
           onRemove={() => void onRemoveEmpty()}
         />
-        <div className="drop-zone">
-          <p>{dragging ? 'Drop the PDF to upload it' : 'Drop a PDF here, or choose one.'}</p>
-          <label>
-            PDF{' '}
-            <input
-              ref={fileInput}
-              type="file"
-              accept="application/pdf"
-              disabled={!collection || progress !== null}
-              onChange={(e) => take(e.target.files?.[0])}
-            />
-          </label>
-        </div>
+        {noEmbed ? (
+          <p className="key-note">
+            {demo?.preset?.label} has no embedding model, so it cannot take uploads. Pick another
+            preset in the key panel to upload.
+          </p>
+        ) : (
+          <div className="drop-zone">
+            <p>{dragging ? 'Drop the PDF to upload it' : 'Drop a PDF here, or choose one.'}</p>
+            {needsKey && (
+              <p className="key-note">Uploading needs a demo code or your own key.</p>
+            )}
+            <label>
+              PDF{' '}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="application/pdf"
+                disabled={!collection || progress !== null || needsKey}
+                onChange={(e) => take(e.target.files?.[0])}
+              />
+            </label>
+            {needsKey && (
+              <button type="button" className="secondary small" onClick={() => demo?.onMissing()}>
+                Add a key or demo code
+              </button>
+            )}
+          </div>
+        )}
         {progress !== null && (
           <p>
             Uploading {Math.round(progress * 100)}%{' '}
@@ -363,18 +436,23 @@ export default function DocumentsPanel({
         <div className="empty-state">
           <h3>No documents yet</h3>
           <p>Drop a PDF on this panel or choose one above. Once it is read, ask about it in the chat.</p>
-          <button
-            type="button"
-            onClick={() => void onSample()}
-            disabled={!collection || progress !== null}
-          >
-            Try a sample PDF
-          </button>
+          {!noEmbed && (
+            <button
+              type="button"
+              onClick={() => void onSample()}
+              disabled={!collection || progress !== null}
+            >
+              Try a sample PDF
+            </button>
+          )}
         </div>
       )}
       {!firstRun && collections.map((c) => (
         <div key={c.id}>
           <h3>{c.name}</h3>
+          {c.embedding_model && (
+            <p className="embedding-model">Embedded with {c.embedding_model}</p>
+          )}
           {c.documents.length === 0 && <p>No documents.</p>}
           <ul className="document-list">
             {c.documents.map((doc) => (

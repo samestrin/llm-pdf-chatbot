@@ -11,6 +11,7 @@ import {
   type StepEvent,
 } from './api'
 import ThinkingIndicator from './ThinkingIndicator'
+import type { ModelCredentials } from './modelAccess'
 
 // pdf.js is large; load the viewer the first time a citation is opened.
 const PdfViewer = lazy(() => import('./PdfViewer'))
@@ -282,6 +283,7 @@ export default function Chat({
   loading = false,
   empty = false,
   ingesting = {},
+  modelAccess,
 }: {
   /** The active collection, chosen in the documents panel; '' while none is named. */
   collection: string
@@ -291,6 +293,9 @@ export default function Chat({
   empty?: boolean
   /** Filenames still being read, by collection name. */
   ingesting?: Record<string, string[]>
+  /** In a public demo: the visitor's credentials, and what to do when none are saved
+   * (the page opens the key panel). Without it, questions need no credentials. */
+  modelAccess?: { credentials: ModelCredentials | null; onMissing: () => void }
 }) {
   const [question, setQuestion] = useState('')
   const [mode, setMode] = useState<ChatMode>('fast')
@@ -308,6 +313,12 @@ export default function Chat({
     e.preventDefault()
     const q = question.trim()
     if (!q || !collection || streaming) return
+    // No model call without a key or code: the page opens the key panel instead,
+    // and the question stays ready to ask once one is saved.
+    if (modelAccess && !modelAccess.credentials) {
+      modelAccess.onMissing()
+      return
+    }
     setQuestion('')
     void run({ question: q, collection, mode }, turns.length)
   }
@@ -334,6 +345,12 @@ export default function Chat({
     { question: q, collection, mode }: Pick<Turn, 'question' | 'collection' | 'mode'>,
     index: number,
   ) {
+    // A retry goes through here too: no model call without a key or code, even when
+    // the credentials were cleared after the answer failed.
+    if (modelAccess && !modelAccess.credentials) {
+      modelAccess.onMissing()
+      return
+    }
     const update = (f: (t: Turn) => Turn) =>
       setTurns((all) => all.map((t, i) => (i === index ? f(t) : t)))
     const fresh: Turn = {
@@ -355,7 +372,13 @@ export default function Chat({
     const abort = new AbortController()
     controller.current = abort
     try {
-      for await (const event of streamChat(collection, q, abort.signal, mode)) {
+      for await (const event of streamChat(
+        collection,
+        q,
+        abort.signal,
+        mode,
+        modelAccess?.credentials,
+      )) {
         if (abort.signal.aborted) break
         update((t) => apply(t, event))
         if (event.type === 'done' || event.type === 'error') return
@@ -458,6 +481,9 @@ export default function Chat({
         {ingesting[collection]?.length ? (
           <p className="ingesting-note">{stillReading(ingesting[collection])}</p>
         ) : null}
+        {modelAccess && !modelAccess.credentials && (
+          <p className="key-note">Asking needs a demo code or your own key.</p>
+        )}
       </form>
     </section>
   )
