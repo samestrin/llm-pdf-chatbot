@@ -65,6 +65,7 @@ These apply when you run the backend outside compose (for example `uv run uvicor
 | `MAX_PDF_PAGES` | 500 | Most pages in an uploaded PDF; more returns 422. |
 | `OCR_TIMEOUT_SECONDS` | 120 | Seconds to wait for the OCR service. |
 | `SESSION_SECRET` | empty (a new secret at each start) | Signs the public demo's session cookie. Set it to a long random value so visitors keep their session across a restart and every backend process accepts the same cookie. Secret. |
+| `DEMO_GATEWAY_URL` | empty (demo codes are off) | Base URL of the gateway that demo codes are sent to, for example `http://litellm:4000/v1`. The `demo` preset asks it for the models `demo-chat` and `demo-embedding`, so the gateway must serve those two names. |
 | `DEMO_UPLOAD_TTL_MINUTES` | 60 | In a public demo, minutes after which a visitor's collection is deleted with its documents, chunks and files. A whole number above 0. |
 | `DEMO_ORIGIN` | empty (the request's own host) | In a public demo, the app's origin as the browser sees it, for example `https://pdfchat.example.com`; several may be given, comma-separated. An upload or delete from any other origin is refused. When empty, the `Origin` header's host must be the request's `Host` (the port is not compared). Set it when a proxy changes the `Host` header, as Vite's dev server does. |
 | `DEMO_SESSION_MAX_COLLECTIONS` | 5 | In a public demo, how many collections one session may keep. A whole number above 0. |

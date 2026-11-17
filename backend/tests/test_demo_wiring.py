@@ -87,7 +87,7 @@ def upload_with(client, headers: dict[str, str]) -> dict:
     ("headers", "secret", "model"),
     [
         (KEY_HEADERS, FAKE_KEY, "text-embedding-3-small"),
-        (CODE_HEADERS, FAKE_CODE, "text-embedding-3-small"),
+        (CODE_HEADERS, FAKE_CODE, "demo-embedding"),
     ],
     ids=["key", "demo code"],
 )
