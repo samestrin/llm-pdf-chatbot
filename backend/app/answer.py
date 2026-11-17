@@ -50,7 +50,10 @@ The answer is a stream of events, one JSON object per line (NDJSON), in the shap
 
 Every answer ends in exactly one `error` or one `done`. A failed model call, a stream
 that breaks off, or a reply outside the schema ends in `error`, also after claims were
-sent, so a partial answer is never marked complete.
+sent, so a partial answer is never marked complete. A key or code failure (a rejected
+key, a used-up or expired demo code, a provider rate limit, a preset with no embedding
+model) says the shared plain wording (`app.credentials.plain_model_error`); no body the
+endpoint sent reaches the client.
 """
 
 import json
@@ -72,7 +75,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 from sqlalchemy import Engine, select
 
 from app.citation import find_quote
-from app.credentials import Credentials, client_for, request_credentials
+from app.credentials import Credentials, client_for, plain_model_error, request_credentials
 from app.db import documents
 from app.deep import (
     DeepBudgetError,
@@ -281,17 +284,20 @@ def answer_events(
     resolve: ResolveOffset,
     mode: AnswerMode = "fast",
     history: Iterable[Turn] = (),
+    credentials: Credentials | None = None,
 ) -> Iterator[dict[str, Any]]:
     """The events of the answer to `question` from `passages`; see the module docstring.
 
     `filenames` maps each passage's document id to its file name; `resolve` reads the
     stored page text a citation must resolve to. `history` is sent as it is given.
+    `credentials`, when given, are the visitor's: a key or code failure then ends in the
+    shared plain wording (`app.credentials.plain_model_error`).
     """
     try:
         citations = _Citations(resolve)
         yield from _answer(llm, question, passages, filenames, citations, mode, list(history))
     except Exception as exc:  # noqa: BLE001 -- any failure must end the answer in an error event.
-        yield _error(exc)
+        yield _error(exc, credentials)
 
 
 def chat_events(
@@ -332,7 +338,7 @@ def chat_events(
                 found = retrieve(engine, embedder or llm, collection, question, reranker=reranker)
                 filenames = _filenames(engine, {p.document_id for p in found.passages})
         except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
-            yield _error(exc)
+            yield _error(exc, credentials)
             return
         if settings is not None:
             yield from _deep_events(
@@ -345,6 +351,7 @@ def chat_events(
                 history,
                 settings,
                 partial(_off_topic, min_similarity, min_keyword_coverage),
+                credentials,
             )
             return
         if _off_topic(min_similarity, min_keyword_coverage, found):
@@ -353,7 +360,14 @@ def chat_events(
             return
         resolve = partial(resolve_offset, engine)
         yield from answer_events(
-            llm, question, found.passages, filenames, resolve, mode=mode, history=history
+            llm,
+            question,
+            found.passages,
+            filenames,
+            resolve,
+            mode=mode,
+            history=history,
+            credentials=credentials,
         )
 
 
@@ -382,6 +396,7 @@ def _deep_events(
     history: list[Turn],
     settings: DeepSettings,
     off_topic: Callable[[Retrieval], bool],
+    credentials: Credentials | None = None,
 ) -> Iterator[dict[str, Any]]:
     """The events of a deep answer; see the module docstring and `app.deep`."""
     try:
@@ -411,7 +426,7 @@ def _deep_events(
             llm, question, found_passages, filenames, citations, history, limits, planned
         )
     except Exception as exc:  # noqa: BLE001 -- as in `answer_events`.
-        yield _error(exc)
+        yield _error(exc, credentials)
 
 
 def _deep_answer(
@@ -750,10 +765,13 @@ def _document(p: Passage, filenames: Mapping[str, str]) -> dict[str, str | None]
     return {"id": p.document_id, "filename": filenames.get(p.document_id)}
 
 
-def _error(exc: Exception) -> dict[str, str]:
+def _error(exc: Exception, credentials: Credentials | None = None) -> dict[str, str]:
     """The error event for `exc`. What the client reads is fixed per exception class; the
-    exception's own text and any body the endpoint sent are logged here, never sent on."""
-    reason = _client_reason(exc)
+    exception's own text and any body the endpoint sent are logged here, never sent on.
+    A key or code failure with `credentials` says the shared plain wording itself
+    (`app.credentials.plain_model_error`), with no prefix and nothing from the endpoint."""
+    plain = plain_model_error(exc, credentials)
+    reason = plain if plain is not None else _client_reason(exc)
     if reason is None:
         log.exception("answer failed", exc_info=exc)
         return ErrorEvent(message="the answer failed: internal error").model_dump()
@@ -762,7 +780,8 @@ def _error(exc: Exception) -> dict[str, str]:
         log.warning("answer failed: %s; body: %s", exc, body[:500])
     else:
         log.warning("answer failed: %s", exc)
-    return ErrorEvent(message=f"the answer failed: {reason}").model_dump()
+    message = plain if plain is not None else f"the answer failed: {reason}"
+    return ErrorEvent(message=message).model_dump()
 
 
 def _client_reason(exc: Exception) -> str | None:
