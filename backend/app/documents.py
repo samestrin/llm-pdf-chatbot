@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Annotated
 
 import pymupdf
-from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from sqlalchemy import Engine, delete, exists, insert, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
+from app.credentials import Credentials, request_credentials
 from app.db import collections, documents, ingestion_status
 from app.db import pages as page_table
 
@@ -97,7 +98,8 @@ router = APIRouter()
     status_code=201,
     description=(
         "Upload a PDF into the named collection, creating the collection if it is new, and "
-        "queue it for ingestion (reading, keyword index, embeddings) in the background. "
+        "queue it for ingestion (reading, keyword index, embeddings) in the background, "
+        "embedded with the request's model preset and key when it sends them. "
         f"Non-PDF content and PDFs over the page limit return 422; files over the size limit "
         f"return 413. {NO_AUTH_NOTE}"
     ),
@@ -106,6 +108,7 @@ def upload_document(
     request: Request,
     collection: Annotated[str, PathParam(min_length=1, max_length=200)],
     file: Annotated[UploadFile, File()],
+    credentials: Annotated[Credentials | None, Depends(request_credentials)],
 ) -> dict:
     limits: Limits = request.app.state.limits
     engine = request.app.state.engine
@@ -176,7 +179,8 @@ def upload_document(
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    request.app.state.worker.submit(document_id)
+    # In memory only: the worker embeds with them and they are never stored.
+    request.app.state.worker.submit(document_id, credentials)
     return {
         "id": document_id,
         "collection": collection,

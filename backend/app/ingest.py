@@ -6,9 +6,15 @@ worker has it, then `ready` or `failed` with the reason. The worker writes progr
 (pages read, chunks embedded) as it goes, after the pages are read and after every
 embedding batch of `EMBED_BATCH_SIZE` chunks (default 64).
 
+A document uploaded with a visitor's preset and key (`app.credentials`) is embedded with
+them. They travel with the document in the worker's queue, in memory only: never in a row,
+a file or a log line.
+
 Nothing survives a stop but the status rows. On startup a document left `processing`
 was cut off part way, so it is marked failed; a document still `queued` had not been
-started, so it is queued again. This assumes one app process per database.
+started, so it is queued again. In a public demo (`PUBLIC_DEMO`) the key a document was
+uploaded with is gone after a stop, so both are marked failed and the visitor uploads it
+again. This assumes one app process per database.
 
 A document deleted while it is being ingested is dropped quietly: its rows cascade
 away, and the worker stops at its next write.
@@ -20,11 +26,13 @@ import queue
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from sqlalchemy import ColumnElement, Engine, exists, func, insert, literal_column, select, update
 from sqlalchemy.engine import Connection
 
+from app.credentials import Credentials, client_for
 from app.db import (
     TEXT_SEARCH_CONFIG,
     chunk_embeddings,
@@ -34,12 +42,13 @@ from app.db import (
     ingestion_status,
 )
 from app.documents import Limits, stored_path
-from app.llm import LLMClient, LLMConfig, LLMConnectionError
+from app.llm import LLMClient, LLMConfig, LLMConnectionError, public_demo
 from app.pages import store_pages
 from app.reader import NO_TEXT_LAYER, PageRead, read_pdf
 
 DEFAULT_EMBED_BATCH_SIZE = 64
 INTERRUPTED = "ingestion was interrupted: the server stopped while this document was processing"
+DEMO_INTERRUPTED = "ingestion was interrupted when the server restarted: upload the document again"
 NO_PAGE_READ = "no page could be read"
 SCAN_WITH_OCR_OFF = (
     "This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)"
@@ -69,6 +78,13 @@ class _Gone(Exception):
     """The document was deleted while it was being ingested."""
 
 
+@dataclass(frozen=True)
+class _Job:
+    document_id: str
+    # The visitor's preset and key, held in memory only; `None` embeds with the default.
+    credentials: Credentials | None = field(default=None, repr=False)
+
+
 _STOP = object()
 
 
@@ -91,6 +107,13 @@ class IngestWorker:
     def start(self) -> None:
         """Recover what the last run left behind, then start taking documents."""
         with self.engine.begin() as conn:
+            if public_demo():
+                # The keys these documents were uploaded with did not survive the stop.
+                conn.execute(
+                    update(ingestion_status)
+                    .where(ingestion_status.c.state.in_(["queued", "processing"]))
+                    .values(state="failed", error=DEMO_INTERRUPTED)
+                )
             conn.execute(
                 update(ingestion_status)
                 .where(ingestion_status.c.state == "processing")
@@ -117,8 +140,9 @@ class IngestWorker:
         self._thread.join()
         self._thread = None
 
-    def submit(self, document_id: str) -> None:
-        self._queue.put(document_id)
+    def submit(self, document_id: str, credentials: Credentials | None = None) -> None:
+        """Queue the document; `credentials`, when given, are the ones it is embedded with."""
+        self._queue.put(_Job(document_id, credentials))
 
     def join(self) -> None:
         """Wait until every submitted document has been handled."""
@@ -131,9 +155,9 @@ class IngestWorker:
                 if item is _STOP or self._stopping.is_set():
                     self._drain()
                     return
-                self.ingest(item)
+                self.ingest(item.document_id, item.credentials)
             except Exception:
-                log.exception("ingestion of %s could not record its result", item)
+                log.exception("ingestion of %s could not record its result", item.document_id)
             finally:
                 self._queue.task_done()
 
@@ -146,7 +170,7 @@ class IngestWorker:
                 return
             self._queue.task_done()
 
-    def ingest(self, document_id: str) -> None:
+    def ingest(self, document_id: str, credentials: Credentials | None = None) -> None:
         with self.engine.begin() as conn:
             started = conn.execute(
                 update(ingestion_status)
@@ -159,7 +183,7 @@ class IngestWorker:
         if not started:
             return
         try:
-            self._ingest(document_id)
+            self._ingest(document_id, credentials)
         except _Gone:
             return
         except Exception as exc:  # noqa: BLE001 -- any failure is recorded as the reason.
@@ -173,7 +197,7 @@ class IngestWorker:
             with self.engine.begin() as conn:
                 _set(conn, document_id, state="failed", error=reason)
 
-    def _ingest(self, document_id: str) -> None:
+    def _ingest(self, document_id: str, credentials: Credentials | None) -> None:
         read = read_pdf(stored_path(self.limits, document_id))
         pages_read = sum(1 for page in read if not page.failed)
         store_pages(self.engine, document_id, read)
@@ -202,7 +226,7 @@ class IngestWorker:
         if pages_read == 0:
             raise RuntimeError(_no_page_read_reason(read))
 
-        with self._embedder() as embedder:
+        with self._embedder(credentials) as embedder:
             for start in range(0, len(rows), self.batch_size):
                 batch = rows[start : start + self.batch_size]
                 # No transaction is open while the model works, so a delete is never blocked.
@@ -221,12 +245,13 @@ class IngestWorker:
             _set(conn, document_id, state="ready")
 
     @contextmanager
-    def _embedder(self) -> Iterator[Embedder]:
-        """The injected embedder, or a model client from the environment, closed after use."""
-        if self.embedder is not None:
+    def _embedder(self, credentials: Credentials | None) -> Iterator[Embedder]:
+        """A client for the upload's preset and key, else the injected embedder, else a
+        model client from the environment; a client made here is closed after use."""
+        if credentials is None and self.embedder is not None:
             yield self.embedder
             return
-        client = LLMClient(LLMConfig.from_env())
+        client = client_for(credentials) if credentials else LLMClient(LLMConfig.from_env())
         try:
             yield client
         finally:

@@ -65,13 +65,14 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi import Path as PathParam
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 from sqlalchemy import Engine, select
 
 from app.citation import find_quote
+from app.credentials import Credentials, client_for, request_credentials
 from app.db import documents
 from app.deep import (
     DeepBudgetError,
@@ -95,6 +96,7 @@ from app.llm import (
     LLMResponseError,
     LLMStreamError,
     LLMTimeoutError,
+    public_demo,
 )
 from app.pages import resolve_offset
 from app.retrieval import (
@@ -299,10 +301,13 @@ def chat_events(
     history: Iterable[Turn] = (),
     llm: LLMClient | None = None,
     embedder: Embedder | None = None,
+    credentials: Credentials | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Retrieve from the collection, then answer with the last `CHAT_HISTORY_TURNS` turns
-    of `history`. Without `llm`, a model client and the rerank endpoint come from the
-    environment; a missing setting is an error event."""
+    of `history`. With `credentials`, one client for the visitor's preset and key embeds the
+    question and answers it, in both modes on the preset's chat model. Otherwise, without
+    `llm`, a model client comes from the environment; a missing setting is an error event.
+    The rerank endpoint comes from the environment, except in a public demo, which has none."""
     with ExitStack() as stack:
         try:
             min_similarity = refusal_min_similarity()
@@ -311,10 +316,13 @@ def chat_events(
             cap = chat_history_turns()
             history = history[-cap:] if cap else []
             settings = deep_settings() if mode == "deep" else None
-            if llm is None:
+            if credentials is not None:
+                llm = embedder = client_for(credentials)
+                stack.callback(llm.close)
+            elif llm is None:
                 llm = LLMClient(LLMConfig.from_env())
                 stack.callback(llm.close)
-            reranker = Reranker.from_env()
+            reranker = None if public_demo() else Reranker.from_env()
             if reranker is not None:
                 stack.callback(reranker.close)
             if settings is None:
@@ -584,6 +592,7 @@ def chat(
     collection: Annotated[str, PathParam(min_length=1, max_length=200)],
     body: ChatRequest,
     request: Request,
+    credentials: Annotated[Credentials | None, Depends(request_credentials)],
 ) -> NDJSONResponse:
     state = request.app.state
     events = chat_events(
@@ -594,6 +603,7 @@ def chat(
         history=[Turn(t.question, t.answer) for t in body.history],
         llm=state.llm,
         embedder=state.embedder,
+        credentials=credentials,
     )
     lines = (json.dumps(event) + "\n" for event in events)
     return NDJSONResponse(lines)

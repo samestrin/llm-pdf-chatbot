@@ -8,7 +8,7 @@
     "/collections/{collection}/documents": {
       "post": {
         "summary": "Upload Document",
-        "description": "Upload a PDF into the named collection, creating the collection if it is new, and queue it for ingestion (reading, keyword index, embeddings) in the background. Non-PDF content and PDFs over the page limit return 422; files over the size limit return 413. There is no auth: the app is local and single-user.",
+        "description": "Upload a PDF into the named collection, creating the collection if it is new, and queue it for ingestion (reading, keyword index, embeddings) in the background, embedded with the request's model preset and key when it sends them. Non-PDF content and PDFs over the page limit return 422; files over the size limit return 413. There is no auth: the app is local and single-user.",
         "operationId": "upload_document_collections__collection__documents_post",
         "parameters": [
           {
