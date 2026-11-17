@@ -6,7 +6,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Added
 
-- Model presets for the public demo: `backend/app/presets.json` lists the providers a visitor may use (OpenAI, OpenRouter, Synthetic, Alibaba and the demo gateway), and `GET /presets` gives the page their ids, labels and models, never a base URL, gateway or key. A request names its model with `X-Model-Preset` and `X-Model-Key`, or `X-Demo-Code` (sent to `DEMO_GATEWAY_URL`); an unknown preset or a bad combination is a 400 that echoes no header value, and no base URL is taken from a request. With `PUBLIC_DEMO=true` the `LLM_*` endpoint is not used for a visitor's model call. A model client takes its own key out of any error body an endpoint sends back.
+- Model presets for the public demo: `backend/app/presets.json` lists the providers a visitor may pick (OpenAI, OpenRouter, Synthetic, Alibaba and the demo gateway), and `GET /presets` gives the page their ids, labels and models, never a base URL, gateway or key. The documents and chat routes check the `X-Model-Preset`, `X-Model-Key` and `X-Demo-Code` headers: an unknown preset or a bad combination is a 400 that echoes no header value, and no base URL is taken from a request. With `PUBLIC_DEMO=true` the `LLM_*` endpoint is not used for a model call, so chat and uploads fail until a later change sends them the visitor's credentials. A model client takes its own key out of any error body an endpoint sends back.
 
 ### Changed
 

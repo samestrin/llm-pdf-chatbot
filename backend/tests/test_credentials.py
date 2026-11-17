@@ -7,12 +7,13 @@ the chat stream.
 
 import json
 import logging
+import re
 import socket
 from contextlib import ExitStack
 from typing import Annotated
 
 import pytest
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import MetaData, create_engine, select
 from test_answer import FILENAMES, GLACIER_CLAIM, PASSAGES, page_texts, resolver, stream_json
@@ -114,22 +115,45 @@ def test_a_preset_with_no_embedding_model_has_none():
     assert load_presets()["synthetic"].embedding_model is None
 
 
+GOOD = {
+    "id": "x",
+    "label": "X",
+    "kind": "key",
+    "base_url": "https://a/v1",
+    "chat_model": "m",
+    "embedding_model": None,
+}
+DEMO_GOOD = {**GOOD, "id": "demo", "kind": "demo", "base_url": None}
+
+
 @pytest.mark.parametrize(
-    "bad",
+    "items, words",
     [
-        {"presets": []},
-        {"presets": [{"id": "x", "label": "X", "kind": "key", "chat_model": "m"}]},
-        {"presets": [{"id": "x", "label": "X", "kind": "key", "base_url": "http://a/v1",
-                      "chat_model": "m", "embedding_model": None}]},
-        {"presets": [{"id": "demo", "label": "D", "kind": "demo", "base_url": "https://a/v1",
-                      "chat_model": "m", "embedding_model": None}]},
+        ([], "holds no presets"),
+        ([{k: v for k, v in GOOD.items() if k != "base_url"}], "exactly the fields"),
+        ([{**GOOD, "base_url": "http://a/v1"}], "https:// URL"),
+        ([{**DEMO_GOOD, "base_url": "https://a/v1"}], "DEMO_GATEWAY_URL"),
+        ([GOOD, {**GOOD, "label": "Y"}], "appears twice"),
+        ([{**GOOD, "id": ""}], "non-empty text"),
+        ([{**GOOD, "label": ""}], "non-empty text"),
+        ([{**GOOD, "chat_model": 7}], "non-empty text"),
+        ([{**GOOD, "embedding_model": 3}], "embedding_model is text or null"),
+        ([{**GOOD, "embedding_model": ""}], "embedding_model is text or null"),
+        ([{**GOOD, "kind": "demo"}], "kind must be 'key'"),
+        ([{**DEMO_GOOD, "kind": "key"}], "kind must be 'demo'"),
     ],
-)  # fmt: skip
-def test_a_malformed_preset_file_is_refused(tmp_path, bad):
+)
+def test_a_malformed_preset_file_is_refused(tmp_path, items, words):
     path = tmp_path / "presets.json"
-    path.write_text(json.dumps(bad))
-    with pytest.raises(ValueError):
+    path.write_text(json.dumps({"presets": items}))
+    with pytest.raises(ValueError, match=re.escape(words)):
         load_presets(path)
+
+
+def test_the_guard_cases_start_from_valid_presets(tmp_path):
+    path = tmp_path / "presets.json"
+    path.write_text(json.dumps({"presets": [GOOD, DEMO_GOOD]}))
+    assert list(load_presets(path)) == ["x", "demo"]
 
 
 # --- request headers ---
@@ -195,6 +219,15 @@ def test_a_demo_code_goes_to_the_gateway(gateway):
     assert resp.status_code == 200
     assert resp.json() == {"preset": "demo", "base_url": gateway.url, "query": {}}
     assert probe({"X-Model-Preset": "demo", "X-Demo-Code": FAKE_CODE}).status_code == 200
+
+
+def test_a_demo_client_without_a_gateway_is_503(no_gateway):
+    # The dependency already refuses a code with no gateway; `client_for` checks again for
+    # a caller that holds credentials after the setting is gone (an ingest job, in T2).
+    with pytest.raises(HTTPException) as raised:
+        client_for(Credentials(load_presets()["demo"], FAKE_CODE))
+    assert raised.value.status_code == 503
+    assert_no_secret(raised.value.detail, repr(raised.value))
 
 
 def test_a_demo_code_without_a_gateway_is_503(no_gateway):
