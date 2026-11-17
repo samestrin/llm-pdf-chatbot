@@ -29,7 +29,17 @@ from sqlalchemy.exc import IntegrityError
 from app.credentials import Credentials, request_credentials
 from app.db import SHARED_OWNER, collections, documents, ingestion_status
 from app.db import pages as page_table
-from app.session import current_session, find_collection, require_owner, visible_owners
+from app.session import (
+    CROSS_SITE,
+    READ_ONLY,
+    SessionCaps,
+    cap_refusal,
+    current_session,
+    find_collection,
+    require_owner,
+    same_origin,
+    visible_owners,
+)
 
 DEFAULT_UPLOAD_DIR = "./data/uploads"
 DEFAULT_MAX_UPLOAD_MB = 50
@@ -38,7 +48,8 @@ CHUNK_BYTES = 1024 * 1024
 NO_AUTH_NOTE = (
     "There is no auth and there are no accounts. In a public demo a collection belongs to the "
     "browser session that made it: another session's collection or document returns 404, and "
-    "the shared sample is read-only (403)."
+    "the shared sample is read-only (403). There, an upload or delete sent from another site is "
+    "refused (403)."
 )
 DELETED = {"description": "Deleted; no body"}
 
@@ -178,18 +189,30 @@ def visible_documents(session: str):
 
 
 router = APIRouter()
+# A write the session cookie allows: refused from another site in a public demo.
+COOKIE_WRITE = [Depends(same_origin)]
+FORBIDDEN = error_response(f"`{READ_ONLY}`, or `{CROSS_SITE}` in a public demo")
 
 
 @router.post(
     "/collections/{collection}/documents",
     status_code=201,
+    dependencies=COOKIE_WRITE,
+    responses={
+        403: FORBIDDEN,
+        409: error_response(
+            "Another preset or embedding model, or in a public demo the session's collection "
+            "or upload cap is reached"
+        ),
+    },
     description=(
         "Upload a PDF into the named collection, creating the collection if it is new, and "
         "queue it for ingestion (reading, keyword index, embeddings) in the background, "
         "embedded with the request's model preset and key when it sends them. "
         f"Non-PDF content and PDFs over the page limit return 422; files over the size limit "
         f"return 413. A collection embedded with another preset or embedding model returns "
-        f"409. {NO_AUTH_NOTE}"
+        f"409. In a public demo an upload that would pass the session's cap on collections or on "
+        f"uploaded bytes returns 409 until a delete frees room. {NO_AUTH_NOTE}"
     ),
 )
 def upload_document(
@@ -200,6 +223,7 @@ def upload_document(
 ) -> dict:
     limits: Limits = request.app.state.limits
     engine = request.app.state.engine
+    caps: SessionCaps | None = request.app.state.session_caps
     session = current_session(request)
     limits.upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -236,10 +260,17 @@ def upload_document(
         # Deleting a collection's last document removes the collection, so the collection
         # found here can be gone before the row goes in. The insert then fails on its foreign
         # key before the file moves, and is tried once more against the collection made anew.
+        refusal = None
         for attempt in range(2):
             collection_id = _upload_collection(request, session, collection, credentials)
             try:
                 with engine.begin() as conn:
+                    if caps is not None:
+                        refusal = cap_refusal(conn, session, collection_id, size, caps)
+                    if refusal:
+                        # A collection this upload made goes; one with documents stays.
+                        _delete_collection_if_empty(conn, collection_id)
+                        break
                     conn.execute(
                         insert(documents).values(
                             id=document_id,
@@ -265,6 +296,8 @@ def upload_document(
                 # The commit failed after the rename: no row points at the file, so remove it.
                 final_path.unlink(missing_ok=True)
                 raise
+        if refusal:
+            raise HTTPException(409, refusal)
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -493,9 +526,10 @@ def document_page(request: Request, document_id: str, page: int) -> dict:
 @router.delete(
     "/documents/{document_id}",
     status_code=204,
+    dependencies=COOKIE_WRITE,
     responses={
         204: DELETED,
-        403: error_response("`The sample collection is read-only`"),
+        403: FORBIDDEN,
         404: error_response("`document not found`"),
     },
     description=(
@@ -552,9 +586,10 @@ def _delete_collection_if_empty(conn: Connection, collection_id: int) -> bool:
 @router.delete(
     "/collections/{collection}",
     status_code=204,
+    dependencies=COOKIE_WRITE,
     responses={
         204: DELETED,
-        403: error_response("`The sample collection is read-only`"),
+        403: FORBIDDEN,
         404: error_response("`collection not found`"),
         409: error_response("`collection is not empty`"),
     },
