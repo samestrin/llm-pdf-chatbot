@@ -21,6 +21,60 @@
               "maxLength": 200,
               "title": "Collection"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "requestBody": {
@@ -73,6 +127,60 @@
               "type": "string",
               "title": "Document Id"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "responses": {
@@ -106,18 +214,84 @@
         "summary": "List Collections",
         "description": "Every collection by name, each with its documents in upload order. A document has its display file name, page count, size and, under `status`, the same status fields as `GET /documents/{document_id}/status`. Deleting a collection's last document removes the collection, so a listed collection normally has documents. There is no auth: the app is local and single-user.",
         "operationId": "list_collections_collections_get",
+        "parameters": [
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "additionalProperties": true,
-                    "type": "object"
-                  },
                   "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
                   "title": "Response List Collections Collections Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -139,6 +313,60 @@
               "type": "string",
               "title": "Document Id"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "responses": {
@@ -199,6 +427,60 @@
               "type": "integer",
               "title": "Page"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "responses": {
@@ -241,6 +523,60 @@
               "type": "string",
               "title": "Document Id"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "responses": {
@@ -286,6 +622,60 @@
               "maxLength": 200,
               "title": "Collection"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "responses": {
@@ -340,6 +730,60 @@
               "maxLength": 200,
               "title": "Collection"
             }
+          },
+          {
+            "name": "x-model-preset",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`.",
+              "title": "X-Model-Preset"
+            },
+            "description": "A preset id from `GET /presets`; `demo` with `X-Demo-Code`."
+          },
+          {
+            "name": "x-model-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visitor's own key for the preset; never stored or logged.",
+              "title": "X-Model-Key"
+            },
+            "description": "The visitor's own key for the preset; never stored or logged."
+          },
+          {
+            "name": "x-demo-code",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A demo code, sent to the demo gateway; never stored or logged.",
+              "title": "X-Demo-Code"
+            },
+            "description": "A demo code, sent to the demo gateway; never stored or logged."
           }
         ],
         "requestBody": {
@@ -370,6 +814,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/presets": {
+      "get": {
+        "summary": "The model presets a visitor can pick",
+        "operationId": "presets_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetList"
                 }
               }
             }
@@ -655,6 +1117,72 @@
           "answer"
         ],
         "title": "HistoryTurn"
+      },
+      "PresetInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "key",
+              "demo"
+            ],
+            "title": "Kind"
+          },
+          "chat_model": {
+            "type": "string",
+            "title": "Chat Model"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "chat_model",
+          "embedding_model"
+        ],
+        "title": "PresetInfo",
+        "description": "What the page may know of a preset: no base URL, gateway or key."
+      },
+      "PresetList": {
+        "properties": {
+          "public_demo": {
+            "type": "boolean",
+            "title": "Public Demo"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/PresetInfo"
+            },
+            "type": "array",
+            "title": "Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_demo",
+          "presets"
+        ],
+        "title": "PresetList"
       },
       "RefusalEvent": {
         "properties": {

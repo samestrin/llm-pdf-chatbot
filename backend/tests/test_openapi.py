@@ -45,6 +45,7 @@ SUCCESS_MEDIA_TYPES = {
     ("delete", "/collections/{collection}"): [],
     ("post", "/collections/{collection}/chat"): ["application/x-ndjson"],
     ("get", "/health"): ["application/json"],
+    ("get", "/presets"): ["application/json"],
 }
 
 
