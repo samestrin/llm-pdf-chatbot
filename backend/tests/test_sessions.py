@@ -64,7 +64,14 @@ def uploads(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.delenv("OCR_URL", raising=False)
     monkeypatch.delenv("RERANK_URL", raising=False)
-    for name in ("DEMO_UPLOAD_TTL_MINUTES", "PUBLIC_DEMO", "SESSION_SECRET"):
+    for name in (
+        "DEMO_UPLOAD_TTL_MINUTES",
+        "PUBLIC_DEMO",
+        "SESSION_SECRET",
+        "DEMO_ORIGIN",
+        "DEMO_SESSION_MAX_COLLECTIONS",
+        "DEMO_SESSION_MAX_UPLOAD_MB",
+    ):
         monkeypatch.delenv(name, raising=False)
     return tmp_path / "uploads"
 
@@ -571,6 +578,209 @@ def test_the_chat_errors_are_json_in_the_spec_as_sent(db_engine, demo, status):
     assert list(response["content"]) == ["application/json"]
     assert sent.status_code == 404
     assert sent.headers["content-type"] == "application/json"
+
+
+# --- writes from another site ---
+
+APP_ORIGIN = "http://testserver"
+FOREIGN = [
+    {"Origin": "https://evil.example"},
+    {"Origin": "http://testserver.evil.example"},
+    {"Origin": "null"},
+    # A browser always sends Origin with a POST or DELETE; one that does not is refused.
+    {"Sec-Fetch-Site": "cross-site"},
+    {"Sec-Fetch-Site": "same-origin"},
+]
+
+
+def writes(client, document_id: str, empty: str, headers: dict) -> dict:
+    """Every route that writes with the session cookie: the upload and both deletes."""
+    return {
+        "upload": upload(client, "papers", {**KEY_HEADERS, **headers}),
+        "upload elsewhere": upload(client, "other", {**KEY_HEADERS, **headers}),
+        "delete document": client.delete(f"/documents/{document_id}", headers=headers),
+        "delete collection": client.delete(f"/collections/{empty}", headers=headers),
+    }
+
+
+def add_empty_collection(engine, beside: str = "papers") -> None:
+    """An empty collection named `empty`, owned by whoever owns `beside`."""
+    with engine.begin() as conn:
+        owner = conn.execute(
+            select(collections.c.session_id).where(collections.c.name == beside)
+        ).scalar_one()
+        conn.execute(insert(collections).values(name="empty", session_id=owner))
+
+
+def snapshot(engine, uploads) -> tuple:
+    with engine.connect() as conn:
+        rows = conn.execute(select(collections.c.name).order_by(collections.c.name)).scalars()
+        named = list(rows)
+    return named, count(engine, documents), sorted(p.name for p in uploads.glob("*.pdf"))
+
+
+@pytest.mark.parametrize("headers", FOREIGN, ids=lambda h: "=".join(*h.items()))
+def test_a_write_from_another_site_is_403_and_changes_nothing(db_engine, demo, uploads, headers):
+    with TestClient(create_app(db_engine)) as client:
+        doc = uploaded(client)["id"]
+        add_empty_collection(db_engine)
+        before = snapshot(db_engine, uploads)
+        refused = writes(client, doc, "empty", headers)
+        after = snapshot(db_engine, uploads)
+    for route, resp in refused.items():
+        assert resp.status_code == 403, (route, resp.text)
+        assert resp.json() == {"detail": session.CROSS_SITE}, route
+    assert after == before
+
+
+def test_a_write_from_the_apps_own_origin_goes_through(db_engine, demo, uploads):
+    with TestClient(create_app(db_engine)) as client:
+        doc = uploaded(client)["id"]
+        add_empty_collection(db_engine)
+        same = {"Origin": APP_ORIGIN, "Sec-Fetch-Site": "same-origin"}
+        done = writes(client, doc, "empty", same)
+    assert done["upload"].status_code == 201, done["upload"].text
+    assert done["upload elsewhere"].status_code == 201, done["upload elsewhere"].text
+    assert done["delete document"].status_code == 204
+    assert done["delete collection"].status_code == 204
+
+
+def test_a_write_from_outside_a_browser_needs_no_origin(db_engine, demo):
+    """A script or curl sends neither Origin nor Sec-Fetch-Site, and cannot hold a visitor's
+    cookie, so it is no cross-site risk."""
+    with TestClient(create_app(db_engine)) as client:
+        doc = uploaded(client)["id"]
+        assert client.delete(f"/documents/{doc}").status_code == 204
+
+
+def test_the_apps_origin_may_be_set(db_engine, demo, monkeypatch):
+    monkeypatch.setenv("DEMO_ORIGIN", "https://pdfchat.example, http://localhost:5173/")
+    with TestClient(create_app(db_engine)) as client:
+        for origin in (
+            "https://pdfchat.example",
+            "http://localhost:5173",
+            "HTTPS://PDFCHAT.example",
+        ):
+            resp = upload(client, headers={**KEY_HEADERS, "Origin": origin})
+            assert resp.status_code == 201, (origin, resp.text)
+        # Once set, the request's own host is not enough.
+        for origin in (APP_ORIGIN, "http://pdfchat.example", "https://pdfchat.example:8443"):
+            resp = upload(client, headers={**KEY_HEADERS, "Origin": origin})
+            assert resp.status_code == 403, origin
+
+
+def test_reads_and_chat_are_not_checked(db_engine, demo):
+    foreign = {"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}
+    with TestClient(create_app(db_engine)) as client:
+        doc = uploaded(client)["id"]
+        assert client.get("/collections", headers=foreign).status_code == 200
+        assert client.get(f"/documents/{doc}/pdf", headers=foreign).status_code == 200
+        assert chat(client, headers={**KEY_HEADERS, **foreign}).status_code == 200
+
+
+def test_outside_a_demo_a_write_from_another_site_goes_through(db_engine, provider, uploads):
+    foreign = {"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}
+    with TestClient(create_app(db_engine)) as client:
+        doc = uploaded(client)["id"]
+        add_empty_collection(db_engine)
+        done = writes(client, doc, "empty", foreign)
+    assert [r.status_code for r in done.values()] == [201, 201, 204, 204]
+
+
+# --- per-session caps ---
+
+
+def caps(client, collections=10, upload_bytes: int | None = None) -> None:
+    """Caps in bytes, small enough for the test PDF to reach."""
+    upload_bytes = 10 * len(PDF) if upload_bytes is None else upload_bytes
+    client.app.state.session_caps = session.SessionCaps(collections, upload_bytes)
+
+
+def test_the_collection_cap_blocks_the_next_new_collection_until_a_delete(db_engine, demo, uploads):
+    with TestClient(create_app(db_engine)) as client:
+        caps(client, collections=2)
+        first = uploaded(client, "one")["id"]
+        uploaded(client, "two")
+        before = snapshot(db_engine, uploads)
+
+        refused = upload(client, "three")
+        assert refused.status_code == 409, refused.text
+        assert refused.json() == {
+            "detail": "This session has reached its limit of 2 collections; "
+            "delete one to make another"
+        }
+        # Nothing was kept: no collection, no row, no file.
+        assert snapshot(db_engine, uploads) == before
+        # More into a collection it already has is not a new collection.
+        uploaded(client, "two")
+
+        assert client.delete(f"/documents/{first}").status_code == 204
+        uploaded(client, "three")
+        assert sorted(names(client)) == ["three", "two"]
+
+
+def test_the_upload_cap_blocks_the_upload_past_it_until_a_delete(db_engine, demo, uploads):
+    with TestClient(create_app(db_engine)) as client:
+        caps(client, upload_bytes=2 * len(PDF))
+        first = uploaded(client, "one")["id"]
+        uploaded(client, "two")
+        before = snapshot(db_engine, uploads)
+
+        for collection in ("one", "three"):
+            refused = upload(client, collection)
+            assert refused.status_code == 409, refused.text
+            assert refused.json()["detail"].startswith(
+                "This session has reached its upload limit of "
+            )
+            assert refused.json()["detail"].endswith("; delete a document to upload more")
+        assert snapshot(db_engine, uploads) == before
+
+        assert client.delete(f"/documents/{first}").status_code == 204
+        uploaded(client, "three")
+
+
+def test_the_caps_are_per_session(db_engine, demo):
+    app = create_app(db_engine)
+    with TestClient(app) as a:
+        caps(a, collections=1, upload_bytes=len(PDF))
+        uploaded(a, "one")
+        assert upload(a, "one").status_code == 409
+        assert upload(a, "two").status_code == 409
+        b = TestClient(app)
+        uploaded(b, "one")
+
+
+def test_the_sample_does_not_count_against_a_cap(db_engine, sample):
+    with TestClient(create_app(db_engine)) as visitor:
+        caps(visitor, collections=1, upload_bytes=len(PDF))
+        uploaded(visitor)
+
+
+def test_outside_a_demo_there_is_no_cap(db_engine, provider, uploads, monkeypatch):
+    monkeypatch.setenv("DEMO_SESSION_MAX_COLLECTIONS", "1")
+    monkeypatch.setenv("DEMO_SESSION_MAX_UPLOAD_MB", "1")
+    with TestClient(create_app(db_engine)) as client:
+        assert client.app.state.session_caps is None
+        for collection in ("one", "two", "three"):
+            uploaded(client, collection)
+
+
+def test_the_caps_come_from_the_environment(db_engine, demo, monkeypatch):
+    assert session.SessionCaps.from_env({}) == session.SessionCaps(
+        session.DEFAULT_SESSION_MAX_COLLECTIONS,
+        session.DEFAULT_SESSION_MAX_UPLOAD_MB * 1024 * 1024,
+    )
+    env = {"DEMO_SESSION_MAX_COLLECTIONS": "3", "DEMO_SESSION_MAX_UPLOAD_MB": " 20 "}
+    assert session.SessionCaps.from_env(env) == session.SessionCaps(3, 20 * 1024 * 1024)
+    monkeypatch.setenv("DEMO_SESSION_MAX_COLLECTIONS", "4")
+    assert create_app(db_engine).state.session_caps.collections == 4
+
+
+@pytest.mark.parametrize("name", ["DEMO_SESSION_MAX_COLLECTIONS", "DEMO_SESSION_MAX_UPLOAD_MB"])
+@pytest.mark.parametrize("value", ["0", "-1", "2.5", "lots"])
+def test_a_bad_cap_setting_is_rejected(name, value):
+    with pytest.raises(ValueError, match=name):
+        session.SessionCaps.from_env({name: value})
 
 
 # --- the schema ---
