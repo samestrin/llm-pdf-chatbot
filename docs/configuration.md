@@ -64,3 +64,15 @@ These apply when you run the backend outside compose (for example `uv run uvicor
 | `MAX_UPLOAD_MB` | 50 | Largest upload, in MB; a larger file returns 413. The frontend's nginx accepts request bodies up to 64 MB. |
 | `MAX_PDF_PAGES` | 500 | Most pages in an uploaded PDF; more returns 422. |
 | `OCR_TIMEOUT_SECONDS` | 120 | Seconds to wait for the OCR service. |
+| `SESSION_SECRET` | empty (a new secret at each start) | Signs the public demo's session cookie. Set it to a long random value so visitors keep their session across a restart and every backend process accepts the same cookie. Secret. |
+| `DEMO_UPLOAD_TTL_MINUTES` | 60 | In a public demo, minutes after which a visitor's collection is deleted with its documents, chunks and files. A whole number above 0. |
+
+## Sessions in a public demo
+
+With `PUBLIC_DEMO=true` each browser gets a signed, HttpOnly session cookie (`pdfchat_session`; `Secure` when the request came over HTTPS or with `X-Forwarded-Proto: https`). There is no account behind it. A collection belongs to the session that made it, so two visitors can each have a collection called `papers`, and every collection, document, page, PDF, delete and chat route answers 404 for another session's collection or document, exactly as for one that does not exist. A job deletes a visitor's collection `DEMO_UPLOAD_TTL_MINUTES` after it was made (at startup and then every minute).
+
+The sample: a collection uploaded with `PUBLIC_DEMO` off belongs to the shared owner, outside every visitor session. In the demo every session sees it, reads it and asks it, and none can upload to it or delete it (403 `The sample collection is read-only`); it never expires. Upload it with a preset's headers (`X-Model-Preset` and `X-Model-Key`, or `X-Demo-Code`) so visitors can ask it with that preset.
+
+A collection records the preset and embedding model it was embedded with (`embedding_preset` and `embedding_model` in `GET /collections`). A question or an upload with another preset or embedding model is refused with 409: "This collection was embedded with <model>; switch back to <preset> to ask about it". A collection embedded with the server's own `LLM_*` model records neither and is not checked.
+
+**A fresh, empty database is required.** There are no migrations: the backend refuses to start on a database made before collections had owners (no `collections.session_id`), and says so. This holds for every install, not only the public demo: point `DATABASE_URL` at a new database (or drop the old one, for compose `docker compose down -v`) and upload the documents again.

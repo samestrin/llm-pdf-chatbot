@@ -152,6 +152,20 @@ def test_a_forged_or_unsigned_cookie_is_a_new_session(db_engine, demo, forge):
     assert resp.cookies[session.COOKIE] != a.cookies[session.COOKIE]
 
 
+def test_a_malformed_cookie_beside_it_keeps_the_session(db_engine, demo):
+    app = create_app(db_engine)
+    with TestClient(app) as a:
+        uploaded(a)
+        cookie = a.cookies[session.COOKIE]
+    again = TestClient(app)
+    resp = again.get(
+        "/collections",
+        headers={"Cookie": f'tracker={{"a": 1, "b": 2}}; {session.COOKIE}={cookie}; x="y'},
+    )
+    assert [c["name"] for c in resp.json()] == ["papers"]
+    assert "set-cookie" not in resp.headers
+
+
 def test_a_cookie_signed_with_another_secret_is_a_new_session(db_engine, demo, monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "one secret")
     with TestClient(create_app(db_engine)) as a:
