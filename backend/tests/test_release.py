@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 WORKFLOW = yaml.safe_load((REPO / ".github/workflows/release.yml").read_text())
 JOBS = WORKFLOW["jobs"]
 # PyYAML reads the bare key `on` as the boolean True.
@@ -25,7 +25,7 @@ def steps_text(job):
     return "\n".join(s.get("run", "") for s in JOBS[job]["steps"])
 
 
-def test_backend_version_is_1_0_1_in_pyproject_and_lock():
+def test_backend_version_is_1_1_0_in_pyproject_and_lock():
     pyproject = tomllib.loads((REPO / "backend/pyproject.toml").read_text())
     assert pyproject["project"]["version"] == VERSION
     lock = tomllib.loads((REPO / "backend/uv.lock").read_text())
@@ -33,7 +33,7 @@ def test_backend_version_is_1_0_1_in_pyproject_and_lock():
     assert own["version"] == VERSION
 
 
-def test_frontend_version_is_1_0_1_in_package_and_lock():
+def test_frontend_version_is_1_1_0_in_package_and_lock():
     package = json.loads((REPO / "frontend/package.json").read_text())
     lock = json.loads((REPO / "frontend/package-lock.json").read_text())
     assert package["version"] == VERSION
@@ -239,7 +239,7 @@ def write_changelog(tmp_path, text=SAMPLE_CHANGELOG):
 
 
 def test_changelog_section_returns_the_version_without_the_next_heading(tmp_path, capsys):
-    code = changelog_section.main([VERSION, write_changelog(tmp_path)])
+    code = changelog_section.main(["1.0.1", write_changelog(tmp_path)])
     out = capsys.readouterr().out
     assert code == 0
     assert out.startswith("Intro.")
@@ -300,5 +300,5 @@ def test_no_1_0_1_fix_is_left_under_unreleased(fix):
 
 @pytest.mark.parametrize("fix", FIXES_IN_1_0_1)
 def test_the_1_0_1_release_notes_carry_the_fix(fix, capsys):
-    assert changelog_section.main([VERSION]) == 0
+    assert changelog_section.main(["1.0.1"]) == 0
     assert fix in capsys.readouterr().out
