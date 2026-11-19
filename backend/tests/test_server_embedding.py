@@ -262,6 +262,7 @@ def test_a_session_past_its_embedding_cap_is_refused_plainly_and_others_are_not(
         first = [ask(a) for _ in range(2)]
         before = len(gateway.requests)
         refused = ask(a)
+        after = len(gateway.requests)
         b = TestClient(app)
         other = ask(b)
 
@@ -274,7 +275,7 @@ def test_a_session_past_its_embedding_cap_is_refused_plainly_and_others_are_not(
         }
     ]
     # Refused before any call: the gateway saw nothing from the third question.
-    assert len(gateway.requests) == before
+    assert after == before
     assert other[-1]["type"] == "done"
 
 

@@ -59,6 +59,11 @@ class NoEmbeddingModelError(LLMConfigError):
         super().__init__("X-Model-Preset", "this preset has no embedding model")
 
 
+class EmbedCapError(LLMError):
+    """A public demo session has used its embedding calls for now (`app.server_embedding`).
+    Its message is plain, meant for the visitor."""
+
+
 class LLMConnectionError(LLMError):
     """The endpoint could not be reached."""
 

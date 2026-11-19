@@ -1,9 +1,10 @@
 """The request's credentials on the chat and upload routes, and a public demo's restart.
 
-An upload is embedded with the visitor's preset and key, carried to the ingest worker in
-memory only; a question is answered with them, deep mode on the preset's one chat model and
-with no rerank in a public demo. A restart in a public demo fails the documents it cannot
-finish, since their keys are gone.
+Outside a public demo an upload is embedded with the visitor's preset and key, carried to
+the ingest worker in memory only. A question is answered with them, deep mode on the
+preset's one chat model and with no rerank in a public demo, where the server embeds the
+question itself (`tests/test_server_embedding.py`). A restart in a public demo fails the
+documents it cannot finish.
 """
 
 import json
@@ -26,6 +27,7 @@ from app.main import create_app
 OPENAI = credentials.load_presets()["openai"]
 KEY_HEADERS = {"X-Model-Preset": "openai", "X-Model-Key": FAKE_KEY}
 CODE_HEADERS = {"X-Demo-Code": FAKE_CODE}
+SERVER_KEY = "sk-server-embedding-key"
 
 
 @pytest.fixture
@@ -82,7 +84,6 @@ def upload_with(client, headers: dict[str, str]) -> dict:
 # --- upload: the visitor's preset and key embed the document ---
 
 
-@pytest.mark.parametrize("demo", ["true", ""], ids=["public demo", "not a demo"])
 @pytest.mark.parametrize(
     ("headers", "secret", "model"),
     [
@@ -91,11 +92,11 @@ def upload_with(client, headers: dict[str, str]) -> dict:
     ],
     ids=["key", "demo code"],
 )
-def test_an_upload_embeds_with_the_visitors_preset_and_key(
-    db_engine, provider, env_llm, uploads, monkeypatch, caplog, demo, headers, secret, model
+def test_outside_a_demo_an_upload_embeds_with_the_visitors_preset_and_key(
+    db_engine, provider, env_llm, uploads, monkeypatch, caplog, headers, secret, model
 ):
     caplog.set_level(logging.DEBUG)
-    monkeypatch.setenv("PUBLIC_DEMO", demo)
+    monkeypatch.delenv("PUBLIC_DEMO", raising=False)
     provider.responder = embeddings
     app = create_app(db_engine)
     with TestClient(app) as client:
@@ -274,8 +275,10 @@ def test_deep_mode_in_demo_mode_calls_the_preset_chat_model_and_never_the_rerank
 ):
     caplog.set_level(logging.DEBUG)
     monkeypatch.setenv("PUBLIC_DEMO", "true")
+    monkeypatch.setenv("DEMO_EMBEDDING_KEY", SERVER_KEY)
     two_reports(engine)
-    embedded_with(engine, headers.get("X-Model-Preset", "demo"))
+    # In a demo the server embeds, with the demo preset's embedding model.
+    embedded_with(engine, "demo")
     provider.responder = preset_model
     secret = headers.get("X-Model-Key") or headers["X-Demo-Code"]
     preset = credentials.load_presets()[headers.get("X-Model-Preset", "demo")]
@@ -299,7 +302,9 @@ def test_deep_mode_in_demo_mode_calls_the_preset_chat_model_and_never_the_rerank
     chats = [r for r in provider.requests if r["path"] == "/v1/chat/completions"]
     assert len(chats) == 2  # the plan and the answer
     assert {r["json"]["model"] for r in chats} == {preset.chat_model}
-    assert {r["auth"] for r in provider.requests} == {f"Bearer {secret}"}
+    assert {r["auth"] for r in chats} == {f"Bearer {secret}"}
+    embeds = [r for r in provider.requests if r["path"] == "/v1/embeddings"]
+    assert embeds and {r["auth"] for r in embeds} == {f"Bearer {SERVER_KEY}"}
     assert rerank.requests == []
     assert env_llm.requests == []
     assert_no_secret(resp.text, caplog.text)

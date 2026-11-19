@@ -7,7 +7,8 @@ worker has it, then `ready` or `failed` with the reason. The worker writes progr
 embedding batch of `EMBED_BATCH_SIZE` chunks (default 64).
 
 A document uploaded with a visitor's preset and key (`app.credentials`) is embedded with
-them. They travel with the document in the worker's queue, in memory only: never in a row,
+them, except in a public demo, where the server embeds every document itself
+(`app.server_embedding`) and the key is not passed on at all. They travel with the document in the worker's queue, in memory only: never in a row,
 a file or a log line.
 
 Nothing survives a stop but the status rows. On startup a document left `processing`
@@ -27,7 +28,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import ColumnElement, Engine, exists, func, insert, literal_column, select, update
 from sqlalchemy.engine import Connection
@@ -45,6 +46,9 @@ from app.documents import Limits, stored_path
 from app.llm import LLMClient, LLMConfig, LLMConnectionError, public_demo
 from app.pages import store_pages
 from app.reader import NO_TEXT_LAYER, PageRead, read_pdf
+
+if TYPE_CHECKING:
+    from app.server_embedding import ServerEmbedding
 
 DEFAULT_EMBED_BATCH_SIZE = 64
 INTERRUPTED = "ingestion was interrupted: the server stopped while this document was processing"
@@ -83,6 +87,8 @@ class _Job:
     document_id: str
     # The visitor's preset and key, held in memory only; `None` embeds with the default.
     credentials: Credentials | None = field(default=None, repr=False)
+    # In a public demo, the session the server's embedding calls count against.
+    session: str | None = None
 
 
 _STOP = object()
@@ -95,10 +101,12 @@ class IngestWorker:
         limits: Limits,
         embedder: Embedder | None = None,
         batch_size: int = DEFAULT_EMBED_BATCH_SIZE,
+        server_embedding: "ServerEmbedding | None" = None,
     ):
         self.engine = engine
         self.limits = limits
         self.embedder = embedder
+        self.server_embedding = server_embedding
         self.batch_size = batch_size
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
@@ -140,9 +148,15 @@ class IngestWorker:
         self._thread.join()
         self._thread = None
 
-    def submit(self, document_id: str, credentials: Credentials | None = None) -> None:
-        """Queue the document; `credentials`, when given, are the ones it is embedded with."""
-        self._queue.put(_Job(document_id, credentials))
+    def submit(
+        self,
+        document_id: str,
+        credentials: Credentials | None = None,
+        session: str | None = None,
+    ) -> None:
+        """Queue the document; `credentials`, when given, are the ones it is embedded with.
+        In a public demo the server embeds it, counted against `session`'s cap."""
+        self._queue.put(_Job(document_id, credentials, session))
 
     def join(self) -> None:
         """Wait until every submitted document has been handled."""
@@ -155,7 +169,7 @@ class IngestWorker:
                 if item is _STOP or self._stopping.is_set():
                     self._drain()
                     return
-                self.ingest(item.document_id, item.credentials)
+                self.ingest(item.document_id, item.credentials, item.session)
             except Exception:
                 log.exception("ingestion of %s could not record its result", item.document_id)
             finally:
@@ -170,7 +184,12 @@ class IngestWorker:
                 return
             self._queue.task_done()
 
-    def ingest(self, document_id: str, credentials: Credentials | None = None) -> None:
+    def ingest(
+        self,
+        document_id: str,
+        credentials: Credentials | None = None,
+        session: str | None = None,
+    ) -> None:
         with self.engine.begin() as conn:
             started = conn.execute(
                 update(ingestion_status)
@@ -183,7 +202,7 @@ class IngestWorker:
         if not started:
             return
         try:
-            self._ingest(document_id, credentials)
+            self._ingest(document_id, credentials, session)
         except _Gone:
             return
         except Exception as exc:  # noqa: BLE001 -- any failure is recorded as the reason.
@@ -201,7 +220,9 @@ class IngestWorker:
             with self.engine.begin() as conn:
                 _set(conn, document_id, state="failed", error=reason)
 
-    def _ingest(self, document_id: str, credentials: Credentials | None) -> None:
+    def _ingest(
+        self, document_id: str, credentials: Credentials | None, session: str | None
+    ) -> None:
         read = read_pdf(stored_path(self.limits, document_id))
         pages_read = sum(1 for page in read if not page.failed)
         store_pages(self.engine, document_id, read)
@@ -230,7 +251,7 @@ class IngestWorker:
         if pages_read == 0:
             raise RuntimeError(_no_page_read_reason(read))
 
-        with self._embedder(credentials) as embedder:
+        with self._embedder(credentials, session) as embedder:
             for start in range(0, len(rows), self.batch_size):
                 batch = rows[start : start + self.batch_size]
                 # No transaction is open while the model works, so a delete is never blocked.
@@ -249,9 +270,14 @@ class IngestWorker:
             _set(conn, document_id, state="ready")
 
     @contextmanager
-    def _embedder(self, credentials: Credentials | None) -> Iterator[Embedder]:
-        """A client for the upload's preset and key, else the injected embedder, else a
-        model client from the environment; a client made here is closed after use."""
+    def _embedder(self, credentials: Credentials | None, session: str | None) -> Iterator[Embedder]:
+        """In a public demo the server's embedder, counted against the session; else a
+        client for the upload's preset and key, else the injected embedder, else a model
+        client from the environment. A client made here is closed after use."""
+        if self.server_embedding is not None and session is not None:
+            with self.server_embedding.embedder(session) as embedder:
+                yield embedder
+            return
         if credentials is None and self.embedder is not None:
             yield self.embedder
             return

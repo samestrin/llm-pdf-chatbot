@@ -9,7 +9,6 @@ collection is questioned only with the preset and embedding model it was embedde
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -38,9 +37,11 @@ from app.retrieval import retrieve
 KEY_HEADERS = {"X-Model-Preset": "openai", "X-Model-Key": FAKE_KEY}
 CODE_HEADERS = {"X-Demo-Code": FAKE_CODE}
 PDF = make_pdf(["SECTION 1\nThe glacier retreated forty metres."])
-MISMATCH = (
+SERVER_KEY = "sk-server-embedding-key"
+# In a demo the server embeds with the demo preset's model; a collection of another is refused.
+DEMO_MISMATCH = (
     "This collection was embedded with text-embedding-3-small; "
-    "switch back to OpenAI to ask about it"
+    "this server embeds with demo-embedding, so it cannot ask about it"
 )
 
 
@@ -80,6 +81,8 @@ def uploads(tmp_path, monkeypatch):
 @pytest.fixture
 def demo(monkeypatch, provider, uploads):
     monkeypatch.setenv("PUBLIC_DEMO", "true")
+    # The server embeds everything in a demo (`app.server_embedding`), at the fake gateway.
+    monkeypatch.setenv("DEMO_EMBEDDING_KEY", SERVER_KEY)
 
 
 def upload(client, collection="papers", headers=KEY_HEADERS):
@@ -422,11 +425,13 @@ def test_a_bad_ttl_setting_is_rejected(value):
 
 @pytest.fixture
 def sample(db_engine, provider, uploads, monkeypatch) -> dict:
-    """The sample, uploaded by the operator with `PUBLIC_DEMO` off, then the demo on."""
+    """The sample, uploaded by the operator with `PUBLIC_DEMO` off and a demo code, as the
+    demo host has it, then the demo on."""
     monkeypatch.delenv("PUBLIC_DEMO", raising=False)
     with TestClient(create_app(db_engine)) as owner:
-        document = uploaded(owner, "sample")
+        document = uploaded(owner, "sample", CODE_HEADERS)
     monkeypatch.setenv("PUBLIC_DEMO", "true")
+    monkeypatch.setenv("DEMO_EMBEDDING_KEY", SERVER_KEY)
     return document
 
 
@@ -440,8 +445,8 @@ def test_every_session_sees_and_reads_the_sample(db_engine, sample, uploads):
             assert sorted(c["name"] for c in listed) == sorted(["sample", *mine])
             (shown,) = [c for c in listed if c["name"] == "sample"]
             assert shown["read_only"] is True
-            assert shown["embedding_preset"] == "openai"
-            assert shown["embedding_model"] == "text-embedding-3-small"
+            assert shown["embedding_preset"] == "demo"
+            assert shown["embedding_model"] == "demo-embedding"
             assert all(c["read_only"] is False for c in listed if c["name"] != "sample")
             doc = sample["id"]
             assert visitor.get(f"/documents/{doc}/status").json()["state"] == "ready"
@@ -466,46 +471,49 @@ def test_the_sample_cannot_be_changed_or_deleted(db_engine, sample, uploads):
     assert [p.name for p in uploads.glob("*.pdf")] == [f"{sample['id']}.pdf"]
 
 
-# --- a collection is questioned with its own preset and embedding model ---
+# --- in a demo every collection is embedded on the server, with one model ---
 
 
-def test_a_collection_records_its_preset_and_embedding_model(db_engine, demo):
+def test_a_collection_records_the_servers_embedding_model_whatever_the_preset(db_engine, demo):
     with TestClient(create_app(db_engine)) as client:
         uploaded(client, "keyed", KEY_HEADERS)
         uploaded(client, "coded", CODE_HEADERS)
         listed = {c["name"]: c for c in client.get("/collections").json()}
-    assert (listed["keyed"]["embedding_preset"], listed["keyed"]["embedding_model"]) == (
-        "openai",
-        "text-embedding-3-small",
-    )
-    assert listed["coded"]["embedding_preset"] == "demo"
+    for name in ("keyed", "coded"):
+        assert (listed[name]["embedding_preset"], listed[name]["embedding_model"]) == (
+            "demo",
+            "demo-embedding",
+        )
 
 
-def test_another_preset_is_refused_with_the_plain_message(db_engine, demo, provider):
+def test_another_preset_may_ask_and_add_to_a_collection(db_engine, demo, provider):
     with TestClient(create_app(db_engine)) as client:
         uploaded(client)
-        before = len(provider.requests)
         resp = chat(client, headers=CODE_HEADERS)
+        added = upload(client, headers=CODE_HEADERS)
+    assert resp.status_code == 200, resp.text
+    assert added.status_code == 201, added.text
+
+
+def set_embedding_model(engine, model: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(update(collections).values(embedding_model=model))
+
+
+def test_a_collection_of_another_embedding_model_is_refused_with_the_plain_message(
+    db_engine, demo, provider
+):
+    with TestClient(create_app(db_engine)) as client:
+        uploaded(client)
+        set_embedding_model(db_engine, "text-embedding-3-small")
+        before = len(provider.requests)
+        resp = chat(client)
     assert resp.status_code == 409
-    assert resp.json() == {"detail": MISMATCH}
+    assert resp.json() == {"detail": DEMO_MISMATCH}
     assert len(provider.requests) == before  # refused before any model call
 
 
-def test_another_embedding_model_is_refused_with_the_plain_message(db_engine, demo, provider):
-    app = create_app(db_engine)
-    with TestClient(app) as client:
-        uploaded(client)
-        openai = app.state.presets["openai"]
-        app.state.presets = {
-            **app.state.presets,
-            "openai": replace(openai, embedding_model="text-embedding-3-large"),
-        }
-        resp = chat(client)
-    assert resp.status_code == 409
-    assert resp.json() == {"detail": MISMATCH}
-
-
-def test_the_same_preset_and_model_may_ask(db_engine, demo):
+def test_the_servers_model_may_ask(db_engine, demo):
     with TestClient(create_app(db_engine)) as client:
         uploaded(client)
         resp = chat(client)
@@ -513,15 +521,15 @@ def test_the_same_preset_and_model_may_ask(db_engine, demo):
     assert resp.headers["content-type"].startswith("application/x-ndjson")
 
 
-def test_an_upload_with_another_preset_is_refused_and_stores_nothing(db_engine, demo, uploads):
+def test_an_upload_into_a_collection_of_another_model_is_refused_and_stores_nothing(
+    db_engine, demo, uploads
+):
     with TestClient(create_app(db_engine)) as client:
         first = uploaded(client)
+        set_embedding_model(db_engine, "text-embedding-3-small")
         resp = upload(client, headers=CODE_HEADERS)
     assert resp.status_code == 409
-    assert resp.json() == {
-        "detail": "This collection was embedded with text-embedding-3-small; "
-        "switch back to OpenAI to add to it"
-    }
+    assert resp.json() == {"detail": DEMO_MISMATCH.replace("ask about it", "add to it")}
     assert count(db_engine, documents) == 1
     assert [p.name for p in uploads.iterdir()] == [f"{first['id']}.pdf"]
 

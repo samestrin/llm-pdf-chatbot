@@ -447,8 +447,11 @@ def test_in_public_demo_the_chat_route_never_calls_the_env_endpoint(tmp_path, mo
         engine = create_engine(f"sqlite:///{tmp_path}/t.db")
         with TestClient(create_app(engine)) as client:
             # A collection every session can read (the sample): a session's unknown one is 404.
+            # It is embedded with the model the demo's server embeds with.
             with engine.begin() as conn:
-                conn.execute(insert(collections).values(name="papers"))
+                conn.execute(
+                    insert(collections).values(name="papers", embedding_model="demo-embedding")
+                )
             resp = client.post("/collections/papers/chat", json={"question": "hi"})
         events = [json.loads(line) for line in resp.text.splitlines()]
         assert events[-1]["type"] == "error"

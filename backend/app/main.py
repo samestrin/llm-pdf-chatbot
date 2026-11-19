@@ -12,10 +12,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app import answer, documents, session
-from app.credentials import PRESETS, public_presets, request_credentials
+from app.credentials import DEMO, PRESETS, public_presets, request_credentials
 from app.db import init_db
 from app.ingest import Embedder, IngestWorker, batch_size_from_env
 from app.llm import LLMClient, public_demo
+from app.server_embedding import EmbedBudget, ServerEmbedding
 
 DEFAULT_DATABASE_URL = "sqlite:///./app.db"
 # The API reference page and the vendored Scalar script it loads (see static/SOURCES.md).
@@ -42,6 +43,9 @@ class PresetList(BaseModel):
     # The page's public notice names it: uploads are deleted after this many minutes.
     # `None` outside a public demo, where nothing is deleted on a timer.
     upload_ttl_minutes: int | None
+    # The model the server embeds every document and question with in a public demo,
+    # whatever the preset; `None` outside one, where each preset embeds with its own.
+    embedding_model: str | None
     presets: list[PresetInfo]
 
 
@@ -95,8 +99,22 @@ def create_app(
     app.state.embedder = embedder
     app.state.llm = llm
     app.state.presets = PRESETS
+    # In a public demo the server embeds everything itself (`app.server_embedding`).
+    app.state.server_embedding = (
+        ServerEmbedding(
+            PRESETS[DEMO].embedding_model or "",
+            EmbedBudget.from_env(window_seconds=session.upload_ttl().total_seconds()),
+            embedder,
+        )
+        if public_demo()
+        else None
+    )
     app.state.worker = IngestWorker(
-        app.state.engine, app.state.limits, embedder, batch_size=batch_size_from_env()
+        app.state.engine,
+        app.state.limits,
+        embedder,
+        batch_size=batch_size_from_env(),
+        server_embedding=app.state.server_embedding,
     )
     # In a public demo every request has a session (`app.session`); its collections are its own.
     app.add_middleware(session.SessionMiddleware, secret=session.session_secret())
@@ -111,6 +129,7 @@ def create_app(
         return PresetList(
             public_demo=demo,
             upload_ttl_minutes=int(session.upload_ttl().total_seconds() // 60) if demo else None,
+            embedding_model=server.model if (server := app.state.server_embedding) else None,
             presets=[PresetInfo(**p) for p in public_presets(app.state.presets)],
         )
 
