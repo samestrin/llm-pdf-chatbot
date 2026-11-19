@@ -510,7 +510,7 @@ describe('DocumentsPanel in a public demo', () => {
     demoPanel({ credentials: { preset: 'synthetic', secret: 'sk-s' } })
     const input = await screen.findByLabelText('PDF', { selector: 'input' })
     expect(input).not.toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Try a sample PDF' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Try a sample PDF' })).toBeEnabled()
     expect(screen.queryByText(/no embedding model/)).toBeNull()
     const file = new File(['%PDF-'], 'a.pdf', { type: 'application/pdf' })
     fireEvent.change(input, { target: { files: [file] } })
