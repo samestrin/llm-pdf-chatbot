@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Suggested questions for the sample: `frontend/public/samples/questions.json` lists questions the sample PDF answers, shown as chips above the question box when the active collection holds it; a click asks. A backend test asks each one through the chat route and checks it is answered with a citation from the sample (by the eval's fake model).
+- View a document: clicking a document's name opens the PDF in the viewer at its first page, on a phone full screen. The viewer now pages with **Previous page** and **Next page**; a citation still opens at its page with the quote highlighted.
+- `DEMO_EMBEDDING_KEY` and `DEMO_SESSION_MAX_EMBED_CALLS` (default 200 per `DEMO_UPLOAD_TTL_MINUTES` window) for the public demo, and `embedding_model` in `GET /presets`: the model the server embeds with in a demo.
+
+### Changed
+
+- In a public demo the server embeds every upload and every question itself, with `DEMO_EMBEDDING_KEY` at `DEMO_GATEWAY_URL` on `demo-embedding`; the visitor's key or demo code is used only for the chat model that writes the answer. The read-only sample now answers with any preset, every preset can upload (Synthetic too), and no demo code is needed. A session past its embedding cap is told so plainly ("This session has reached its limit of <n> embedding calls in <minutes> minutes; try again later"). In a demo a collection embedded with another model is refused with 409 ("…; this server embeds with demo-embedding, so it cannot ask about it"); the old "switch back to <preset>" refusal now applies outside a demo only. **Deploying needs `DEMO_EMBEDDING_KEY` set**, or no upload is read and no question answered in the demo.
+
+### Removed
+
+- The "<preset> has no embedding model, so it cannot take uploads" path in the page: the server embeds for every preset. The key panel now says the key only writes the answers and names the server's embedding model.
+
+### Fixed
+
+- The read-only sample no longer shows a Delete button; the API already refuses to change or delete it (403, the sample stays).
+
 ## [1.1.0] - 2026-11-18
 
 ### Added

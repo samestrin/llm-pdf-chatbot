@@ -11,13 +11,15 @@ Open <http://localhost:8080> (`FRONTEND_PORT`) once the stack is up.
 - An empty collection left over from before shows a "Remove empty collection" button, which asks first.
 - Drop a PDF anywhere on the documents panel to upload it (the panel is highlighted while a file is dragged over it), or choose one with the file button, which uploads it at once. A dropped file that is not a PDF is turned down with a message and nothing is uploaded.
 - In the empty documents panel, **Try a sample PDF** uploads a small sample PDF into the active collection.
-- Each document shows its file name on one line, cut with an ellipsis when it is long (the whole name is in its tooltip), a small Delete button that asks first, and one status line ("Ready: 3 pages").
+- Each document shows its file name on one line, cut with an ellipsis when it is long (the whole name is in its tooltip), a small Delete button that asks first, and one status line ("Ready: 3 pages"). Clicking the name opens the PDF in the viewer at its first page. The read-only sample of a public demo has no Delete button.
 - Before any document is uploaded, both the panel and the chat say what to do first: upload a PDF, then ask about it.
 - A document still queued or being read shows its progress and a note that it can be asked about once it is ready, and the chat names the documents of the active collection that answers still leave out.
 - A failed load or upload shows the reason with a Retry button; Retry upload sends the same file to the same collection again.
 - The header says nothing about the backend while it is up; when the health check fails it says "Backend is down".
 
 ## Asking
+
+When the active collection holds the sample PDF, a few questions it answers show as chips above the question box (from `frontend/public/samples/questions.json`); clicking one asks it. In a public demo with no key or code saved, the click puts the question in the box and opens the key panel.
 
 Type a question and press **Ask** (or Enter; Shift+Enter starts a new line). The question is asked in the active collection. The answer streams in under a short line that says where it was found, and every claim carries a citation chip with the page it came from.
 
@@ -38,7 +40,7 @@ The "Deep mode" switch beside the question box asks in deep mode (see [How it wo
 
 ## Citation viewer
 
-Each claim has a citation chip with its page (`p. 3`). The chip's tooltip is its quote, and its accessible name is the file name and page. Clicking it opens that page of the stored PDF with the quote highlighted; when the quote cannot be found on the page, the page still opens with a "Quote not located on this page." notice and the quote beside it (details in [How it works](how-it-works.md#citation-viewer)). While the page opens, the viewer says so; a PDF that cannot be opened shows the reason with a Retry button.
+Each claim has a citation chip with its page (`p. 3`). The chip's tooltip is its quote, and its accessible name is the file name and page. Clicking it opens that page of the stored PDF with the quote highlighted; when the quote cannot be found on the page, the page still opens with a "Quote not located on this page." notice and the quote beside it (details in [How it works](how-it-works.md#citation-viewer)). While the page opens, the viewer says so; a PDF that cannot be opened shows the reason with a Retry button. **Previous page** and **Next page** move through the document; the quote is highlighted on the cited page only.
 
 ## Themes and layout
 
@@ -50,6 +52,6 @@ The page fits 360 px phones to desktops without sideways scrolling: on a desktop
 
 ## Keyboard and screen readers
 
-The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a header, a documents sidebar (`aside`) and the chat in `main`. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
+The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a header, a documents sidebar (`aside`) and the chat in `main`. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
 
 `frontend/e2e/a11y.spec.ts` runs axe over the empty, loaded-chat and viewer-open screens in both themes and fails on any serious or critical violation. It also runs a keyboard-only upload, ask, open and close.

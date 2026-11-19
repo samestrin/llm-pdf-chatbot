@@ -18,16 +18,19 @@ Every collection, document and chat route accepts the visitor's model credential
 | `X-Model-Key` | The visitor's own key for that preset. It is sent to the preset's provider for that request only: never stored in a row or a file, and never written to a log line or an error body. |
 | `X-Demo-Code` | A demo code for the `demo` preset. The app sends it to `DEMO_GATEWAY_URL` as the API key; it is handled like a key. |
 
-A request with none of these headers uses the server's `LLM_*` endpoint, as in the single shared mode. With `PUBLIC_DEMO=true` the server's endpoint is not used for a visitor's chat or upload: a request without credentials fails with `PUBLIC_DEMO is on: a model call needs a demo code or a preset key`, in the chat stream's `error` event or as the document's failure reason.
+A request with none of these headers uses the server's `LLM_*` endpoint, as in the single shared mode. With `PUBLIC_DEMO=true` the server's endpoint is not used for a visitor's chat: a question without credentials fails with `PUBLIC_DEMO is on: a model call needs a demo code or a preset key` in the chat stream's `error` event.
+
+With `PUBLIC_DEMO=true` the server embeds every upload and every question itself, with its own `DEMO_EMBEDDING_KEY` on the demo preset's embedding model (see [Configuration](configuration.md#sessions-in-a-public-demo)). The key or demo code is sent to the chat model only, so any preset can upload and ask, one with no embedding model of its own too, and an upload needs no credentials at all. Outside a public demo a preset and key embed the upload and the question themselves.
 
 A bad header combination is a 400 whose detail names headers, never a value: `X-Model-Key` and `X-Demo-Code` together; `X-Demo-Code` with a preset other than `demo`; `X-Model-Key` without `X-Model-Preset`; a preset without its key; the `demo` preset without a code; an unknown preset; or a key or code that is not in the expected shape. A demo code when `DEMO_GATEWAY_URL` is unset is 503 (`demo codes are not available here`).
 
-`GET /presets` tells the page what it may offer. It holds no base URL, gateway address or key; the `demo` preset is listed only when `DEMO_GATEWAY_URL` is set, and a preset with no embedding model has `"embedding_model": null`:
+`GET /presets` tells the page what it may offer. It holds no base URL, gateway address or key; the `demo` preset is listed only when `DEMO_GATEWAY_URL` is set, and a preset with no embedding model has `"embedding_model": null`. The top-level `embedding_model` is the model the server embeds with in a public demo:
 
 ```json
 {
   "public_demo": true,
   "upload_ttl_minutes": 60,
+  "embedding_model": "demo-embedding",
   "presets": [
     {"id": "openai", "label": "OpenAI", "kind": "key", "chat_model": "gpt-5-nano", "embedding_model": "text-embedding-3-small"},
     {"id": "demo", "label": "Demo code", "kind": "demo", "chat_model": "demo-chat", "embedding_model": "demo-embedding"}
@@ -35,7 +38,7 @@ A bad header combination is a 400 whose detail names headers, never a value: `X-
 }
 ```
 
-Outside a public demo `public_demo` is `false` and `upload_ttl_minutes` is `null`. The page's key panel, the notice and what is stored in the browser are described in [Configuration](configuration.md#sessions-in-a-public-demo).
+Outside a public demo `public_demo` is `false`, and `upload_ttl_minutes` and `embedding_model` are `null`. The page's key panel, the notice and what is stored in the browser are described in [Configuration](configuration.md#sessions-in-a-public-demo).
 
 ### Rejections in a public demo
 
@@ -44,7 +47,9 @@ Outside a public demo `public_demo` is `false` and `upload_ttl_minutes` is `null
 | 400 | A bad model-header combination, as above. |
 | 403 | An upload or either delete whose `Origin` is not the app's (`DEMO_ORIGIN`, or else the request's own host), or a browser request (one with `Sec-Fetch-Site`) that sent no `Origin`: `This request came from another site and was refused`; or a change to the read-only sample: `The sample collection is read-only`. Nothing is changed. |
 | 404 | A collection, document, page or PDF of another session, exactly as for one that does not exist. |
-| 409 | The upload past a session cap (`DEMO_SESSION_MAX_COLLECTIONS` or `DEMO_SESSION_MAX_UPLOAD_MB`), until a delete or the TTL frees room; or a question or upload with a preset or embedding model other than the collection's: `This collection was embedded with <model>; switch back to <preset> to ask about it`. |
+| 409 | The upload past a session cap (`DEMO_SESSION_MAX_COLLECTIONS` or `DEMO_SESSION_MAX_UPLOAD_MB`), until a delete or the TTL frees room; or a question or upload into a collection embedded with another model than the server's: `This collection was embedded with <model>; this server embeds with demo-embedding, so it cannot ask about it`. |
+
+A session past `DEMO_SESSION_MAX_EMBED_CALLS` embedding calls is not refused with a status: the question ends in an `error` event, and the upload fails with the same reason, `This session has reached its limit of <n> embedding calls in <minutes> minutes; try again later`.
 
 Reads and chat are not checked against `Origin`; only the session cookie writes are. Without `PUBLIC_DEMO` there is no Origin check, no cap and no sample rule.
 
@@ -52,7 +57,7 @@ Reads and chat are not checked against `Origin`; only the session cookie writes 
 
 - Document status reports chunk progress in `chunks_total` and `chunks_embedded`, updated after the pages are read and after every embedding batch. A document can be `ready` with failed pages; each failure has its page, reason and OCR error under `failures`.
 - If no page could be read, the document is `failed`. When OCR is off (`OCR_URL` unset) and no page has a text layer, the exact reason is `This PDF has no text layer (a scan or blank pages); OCR is off (set OCR_URL to read scans)`; otherwise it is `no page could be read`.
-- A document embedded with a visitor's key or demo code that fails on it shows the same plain reason as the chat stream's `error` event (`The key was rejected by <provider>`, `This demo code is used up or expired`, `<provider> is rate limiting this key. Try again shortly.` or `this preset has no embedding model`), never the body the model endpoint sent.
+- A document embedded with a visitor's key or demo code (outside a public demo) that fails on it shows the same plain reason as the chat stream's `error` event (`The key was rejected by <provider>`, `This demo code is used up or expired`, `<provider> is rate limiting this key. Try again shortly.` or `this preset has no embedding model`), never the body the model endpoint sent.
 - The client's file name never touches the file system. It is kept for display only; the stored PDF uses the server-generated document id.
 
 ### Chat requests and history
