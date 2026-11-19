@@ -499,6 +499,22 @@ label {
   flex: 1 1 auto;
 }
 
+/* The file name opens the document in the viewer: text that is a button. */
+.document-list .open-document {
+  background: transparent;
+  color: inherit;
+  border-color: transparent;
+  padding: 0;
+  font-weight: var(--weight-bold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.document-list .open-document:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
 .document-list .delete-button {
   flex: none;
   background: transparent;

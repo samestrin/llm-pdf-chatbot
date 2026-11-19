@@ -316,9 +316,10 @@ describe('Chat', () => {
       quote: `quote for ${text}`,
     })
     const done = { type: 'done', mode: 'fast', model: 'm', cost: null }
+    const onOpen = vi.fn()
     const answerWith = async (...events: object[]) => {
       vi.stubGlobal('fetch', () => Promise.resolve(ndjson(...events)))
-      render(<Chat collection="default" />)
+      render(<Chat collection="default" onOpen={onOpen} />)
       ask('q')
       const answer = await screen.findByRole('article', { name: 'Answer' })
       await vi.waitFor(() => expect(answer).toHaveAttribute('aria-busy', 'false'))
@@ -347,10 +348,13 @@ describe('Chat', () => {
       )
       expect(within(answer).queryByRole('list', { name: 'Sources' })).toBeNull()
 
-      fireEvent.click(within(answer).getByRole('button', { name: `${LONG}, p. 2` }))
-      expect(
-        await screen.findByText(/Opening the PDF viewer|Loading page|Page 2/),
-      ).toBeInTheDocument()
+      const chip = within(answer).getByRole('button', { name: `${LONG}, p. 2` })
+      fireEvent.click(chip)
+      // The page opens the viewer at the cited page.
+      expect(onOpen).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, quote: 'quote for Two.' }),
+        chip,
+      )
     })
 
     it('numbers the sources of a two-document answer', async () => {
@@ -488,5 +492,54 @@ describe('Chat retry in a public demo', () => {
     fireEvent.click(retry)
     expect(onMissing).toHaveBeenCalledTimes(1)
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Chat suggested questions', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const SUGGESTED = ['How much did revenue grow?', 'What does the fox jump over?']
+
+  it('shows the suggestions as chips above the question box, and a click asks it', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(() =>
+      Promise.resolve(ndjson({ type: 'done', mode: 'fast', model: 'm', cost: null })),
+    )
+    vi.stubGlobal('fetch', fetch)
+    render(<Chat collection="default" suggestions={SUGGESTED} />)
+
+    const list = screen.getByRole('list', { name: 'Suggested questions' })
+    const chips = within(list).getAllByRole('button')
+    expect(chips.map((c) => c.textContent)).toEqual(SUGGESTED)
+    // Above the question box.
+    const box = screen.getByLabelText('Ask a question')
+    expect(list.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(chips[1])
+
+    expect(await screen.findByRole('article', { name: 'Question' })).toHaveTextContent(
+      SUGGESTED[1],
+    )
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body)).question).toBe(SUGGESTED[1])
+  })
+
+  it('without a key or code a chip fills the box and opens the key panel, asking nothing', () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const onMissing = vi.fn()
+    render(
+      <Chat
+        collection="default"
+        suggestions={SUGGESTED}
+        modelAccess={{ credentials: null, onMissing }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: SUGGESTED[0] }))
+    expect(screen.getByLabelText('Ask a question')).toHaveValue(SUGGESTED[0])
+    expect(onMissing).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('shows no chips without suggestions', () => {
+    render(<Chat collection="default" />)
+    expect(screen.queryByRole('list', { name: 'Suggested questions' })).toBeNull()
   })
 })

@@ -1,6 +1,14 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from './App'
+import sampleQuestions from '../public/samples/questions.json'
 import { STORAGE_KEY } from './modelAccess'
+
+// pdf.js needs a real canvas and worker; the viewer is opened, never drawn, here.
+vi.mock('pdfjs-dist', () => ({
+  GlobalWorkerOptions: {},
+  getDocument: () => ({ promise: new Promise(() => {}), destroy: () => Promise.resolve() }),
+  TextLayer: class {},
+}))
 
 const PRESETS = {
   public_demo: true,
@@ -247,7 +255,7 @@ describe('App in a public demo', () => {
     expect(fetch.mock.calls.filter(([url]) => url.includes('/documents'))).toEqual([])
   })
 
-  it('a preset with no embedding model cannot take uploads, and the panel says why', async () => {
+  it('a preset with no embedding model can upload and ask', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
     fireEvent.click(
@@ -257,15 +265,42 @@ describe('App in a public demo', () => {
     )
     saveKey('synthetic', 'sk-syn')
     const documents = screen.getByRole('complementary', { name: 'Documents' })
-    expect(
-      within(documents).getByText(
-        'Synthetic has no embedding model, so it cannot take uploads. Pick another preset in the key panel to upload.',
-      ),
-    ).toBeInTheDocument()
-    expect(within(documents).queryByLabelText('PDF', { selector: 'input' })).toBeNull()
-    // Chat still works with that preset.
-    ask('chat only')
+    expect(within(documents).queryByText(/no embedding model/)).toBeNull()
+    expect(within(documents).getByLabelText('PDF', { selector: 'input' })).toBeEnabled()
+    ask('chat with synthetic')
     await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
+  })
+
+  it('the sample shows its suggested questions and no Delete, and opens in the viewer', async () => {
+    const sample = {
+      id: 1,
+      name: 'default',
+      embedding_preset: 'demo',
+      embedding_model: 'demo-embedding',
+      read_only: true,
+      documents: [{ ...readyDoc, id: 's1', filename: 'sample.pdf' }],
+    }
+    const fetch = stubDemoFetch({ collections: [sample] })
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ preset: 'synthetic', secret: 'sk-syn', remember: true }),
+    )
+    render(<App />)
+
+    const chips = await screen.findByRole('list', { name: 'Suggested questions' })
+    expect(within(chips).getAllByRole('button').map((b) => b.textContent)).toEqual(
+      sampleQuestions['sample.pdf'],
+    )
+    const documents = screen.getByRole('complementary', { name: 'Documents' })
+    expect(within(documents).queryByRole('button', { name: 'Delete sample.pdf' })).toBeNull()
+
+    fireEvent.click(within(chips).getAllByRole('button')[0])
+    await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
+
+    fireEvent.click(within(documents).getByRole('button', { name: 'View sample.pdf' }))
+    expect(
+      await screen.findByRole('dialog', { name: 'sample.pdf, page 1' }),
+    ).toBeInTheDocument()
   })
 
   it('uploads carry the saved credentials as headers too', async () => {

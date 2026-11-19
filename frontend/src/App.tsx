@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import Chat from './Chat'
 import ThemeToggle from './ThemeToggle'
 import DocumentsPanel from './DocumentsPanel'
@@ -20,6 +20,19 @@ import {
   type StoredCredentials,
 } from './modelAccess'
 import LogoMark from './LogoMark'
+import type { Viewing } from './PdfViewer'
+import sampleQuestions from '../public/samples/questions.json'
+
+// pdf.js is large; load the viewer the first time a document or citation is opened.
+const PdfViewer = lazy(() => import('./PdfViewer'))
+// Questions each sample PDF answers, by its file name (public/samples/questions.json).
+const SAMPLE_QUESTIONS: Record<string, string[]> = sampleQuestions
+
+/** The suggested questions of the sample PDFs in a collection, once each. */
+export function suggestionsFor(collection: Collection | undefined): string[] {
+  const names = new Set(collection?.documents.map((d) => d.filename))
+  return [...new Set([...names].flatMap((name) => SAMPLE_QUESTIONS[name] ?? []))]
+}
 
 export default function App() {
   const [health, setHealth] = useState<Health | 'checking'>('checking')
@@ -33,6 +46,17 @@ export default function App() {
   const [presetList, setPresetList] = useState<PresetList | null>(null)
   const [creds, setCreds] = useState<StoredCredentials | null>(() => loadCredentials())
   const [panelOpen, setPanelOpen] = useState(false)
+  // The open PDF viewer, and the control that opened it, so closing puts focus back there.
+  const [viewing, setViewing] = useState<Viewing | null>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const openViewer = useCallback((target: Viewing, from: HTMLElement) => {
+    opener.current = from
+    setViewing(target)
+  }, [])
+  const closeViewer = useCallback(() => {
+    setViewing(null)
+    opener.current?.focus()
+  }, [])
   const demo = presetList?.public_demo === true
   const preset = demo ? (presetList?.presets.find((p) => p.id === creds?.preset) ?? null) : null
   const openPanel = useCallback(() => setPanelOpen(true), [])
@@ -69,6 +93,8 @@ export default function App() {
     ]),
   )
   const down = health === 'unreachable'
+  const activeName = active.name.trim()
+  const suggestions = suggestionsFor(collections?.find((c) => c.name === activeName))
 
   return (
     <div className="app">
@@ -99,6 +125,7 @@ export default function App() {
       {demo && panelOpen && presetList && (
         <KeyPanel
           presets={presetList.presets}
+          embeddingModel={presetList.embedding_model ?? null}
           stored={creds}
           onSave={onSaveKey}
           onClear={onClearKey}
@@ -111,12 +138,14 @@ export default function App() {
           onActiveChange={setActive}
           onCollections={onCollections}
           onLoadError={onLoadError}
+          onView={(doc, from) =>
+            openViewer({ document: { id: doc.id, filename: doc.filename }, page: 1 }, from)
+          }
           demo={
             demo && presetList
               ? {
                   ttlMinutes: presetList.upload_ttl_minutes,
                   credentials: creds,
-                  preset,
                   onMissing: openPanel,
                 }
               : undefined
@@ -124,11 +153,24 @@ export default function App() {
         />
         <main id="main" tabIndex={-1}>
           <Chat
-            collection={active.name.trim()}
+            collection={activeName}
             loading={collections === null && !loadFailed}
             empty={collections !== null && collections.every((c) => c.documents.length === 0)}
             ingesting={ingesting}
             modelAccess={demo ? { credentials: creds, onMissing: openPanel } : undefined}
+            suggestions={suggestions}
+            onOpen={openViewer}
+            viewer={
+              viewing && (
+                <Suspense fallback={<p>Opening the PDF viewer…</p>}>
+                  <PdfViewer
+                    key={`${viewing.document.id}:${viewing.page}:${viewing.quote ?? ''}`}
+                    citation={viewing}
+                    onClose={closeViewer}
+                  />
+                </Suspense>
+              )
+            }
           />
         </main>
       </div>
