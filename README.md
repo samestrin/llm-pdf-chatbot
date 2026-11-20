@@ -154,6 +154,7 @@ Everything is an environment variable that `docker compose` reads from your shel
 | `DEEP_MAX_TOKENS` | 50000 | Tokens one deep run may use before it ends in an error |
 | `DEEP_TIMEOUT_SECONDS` | 300 | Seconds one deep run may take before it ends in an error |
 | `LLM_PRICE_FAST_PER_MTOK_IN`, `LLM_PRICE_FAST_PER_MTOK_OUT` | empty (cost `null`) | Fast-model prices per million input and output tokens, for the cost of each answer |
+| `LLM_PRICE_REASONING_PER_MTOK_IN`, `LLM_PRICE_REASONING_PER_MTOK_OUT` | empty (cost `null`) | Reasoning-model prices per million input and output tokens, for the cost of a deep answer (its plan plus its answer) |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `postgres`, `postgres`, `chatbot` | Database credentials |
 | `BACKEND_PORT`, `FRONTEND_PORT` | 8000, 8080 | Published ports |
 
@@ -192,7 +193,6 @@ Details, including deep mode and how the viewer finds the quote on the page, are
 - Scanned PDFs need a separate `llm-pdf-ocr-api` service; without `OCR_URL`, a PDF with no text layer fails to ingest.
 - Retrieval, and so chat, needs Postgres with pgvector; it does not run on SQLite. Keyword search uses Postgres's English text search configuration.
 - Reranking needs a separate rerank service; no rerank model is built into the backend image.
-- Only fast-model prices can be set, so a deep answer's cost is always `null` (unknown).
 
 ## Documentation
 
