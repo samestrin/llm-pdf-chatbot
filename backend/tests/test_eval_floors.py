@@ -24,12 +24,15 @@ AT_FLOORS = {
     "max_errors": 0,
 }
 RATIO_KEYS = ("answer_accuracy", "citation_precision", "refusal_accuracy")
+ACCURACY_AT_FLOOR = Ratio(66, 100)
+CITATION_AT_FLOOR = Ratio(83, 100)
+REFUSAL_AT_FLOOR = Ratio(74, 100)
 
 
 def scores(
-    accuracy: Ratio = Ratio(66, 100),
-    citation: Ratio = Ratio(83, 100),
-    refusal: Ratio = Ratio(74, 100),
+    accuracy: Ratio = ACCURACY_AT_FLOOR,
+    citation: Ratio = CITATION_AT_FLOOR,
+    refusal: Ratio = REFUSAL_AT_FLOOR,
     errors: int = 0,
 ) -> Scores:
     return Scores(accuracy, citation, refusal, cost=None, errors=errors)
