@@ -8,7 +8,9 @@ the answers (`evals.score`), write `evals/results/<date>.json` and print the tab
 The full run uses the models and `OCR_URL` from the environment, as the app does; the
 scanned PDF fails to ingest without OCR, and the run stops. `--subset` leaves out the PDFs
 of a kind in `evals.questions.SKIPPED_KINDS` and answers with `evals.fake.FakeModel`, so it
-needs no endpoint and no key. Either way it needs `DATABASE_URL` to point at Postgres with
+needs no endpoint and no key. A `--subset` run also checks `evals/floors.json`: it names
+each metric under its floor on stderr and exits 1, after the table and the results file
+are written; a full run has no floor. Either way it needs `DATABASE_URL` to point at Postgres with
 pgvector: the run creates its tables in a schema of its own, dropped at the end, so it
 leaves nothing in the database, even one that already holds the app's tables.
 
@@ -39,12 +41,14 @@ from app.documents import Limits, get_or_create_collection, stored_path
 from app.ingest import Embedder, IngestWorker
 from app.llm import LLMClient, LLMConfig, LLMConfigError
 from evals.fake import FakeModel
+from evals.floors import below_floors
 from evals.questions import SKIPPED_KINDS, Question, load_questions
 from evals.score import Claim, Judge, Outcome, Scores, score
 from evals.sources import EVALS, PDF_DIR, SOURCES, read_sources
 
 COLLECTION = "evals"
 RESULTS = EVALS / "results"
+FLOORS = EVALS / "floors.json"
 
 
 def today() -> date:
@@ -264,6 +268,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(table(scores))
     print()
     print(f"Results: {path}")
+    if args.subset:
+        under = below_floors(scores, json.loads(FLOORS.read_text()))
+        for line in under:
+            print(line, file=sys.stderr)
+        if under:
+            return 1
     return 0
 
 
