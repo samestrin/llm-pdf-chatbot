@@ -266,9 +266,7 @@ def test_deep_cost_is_zero_only_with_explicit_zero_reasoning_prices(engine, serv
     two_reports(engine)
     server.responder = deep_model()
 
-    _, events = deep(
-        engine, server, reasoning_price_in=0.0, reasoning_price_out=0.0
-    )
+    _, events = deep(engine, server, reasoning_price_in=0.0, reasoning_price_out=0.0)
 
     assert events[-1]["cost"] == 0.0
 
@@ -277,9 +275,7 @@ def test_a_deep_refusal_reports_the_plans_cost_alone(engine, server):
     add_document(engine, "papers", PAPERS)
     server.responder = deep_model(sub_questions=["What is the capital of France?"])
 
-    _, events = deep(
-        engine, server, question="What is the capital of France?", **REASONING_PRICES
-    )
+    _, events = deep(engine, server, question="What is the capital of France?", **REASONING_PRICES)
 
     assert types(events) == ["step", "refusal", "done"]
     assert events[-1]["cost"] == pytest.approx(CALL_COST)

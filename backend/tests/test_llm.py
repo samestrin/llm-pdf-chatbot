@@ -569,9 +569,7 @@ def test_reasoning_cost_is_none_without_usage(server):
 
 
 def test_reasoning_stream_cost_from_reasoning_prices(server):
-    server.stream(
-        sse(delta("deep", finish_reason="stop"), {"choices": [], "usage": USAGE})
-    )
+    server.stream(sse(delta("deep", finish_reason="stop"), {"choices": [], "usage": USAGE}))
     stream = make_client(server, reasoning_price_in=3.0, reasoning_price_out=12.0).chat_stream(
         [], model="reasoning"
     )
