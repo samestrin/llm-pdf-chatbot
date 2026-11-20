@@ -4,7 +4,8 @@
 `app.llm.LLMClient` in `app.answer.chat_events`: it reads the passages and the question
 out of the prompt and answers with the one sentence that shares the most words with the
 question, quoted from its passage; when no sentence shares at least `MIN_SHARED_WORDS`,
-it answers with no claims, which the chat API turns into a refusal. Its cost is unknown.
+it answers with no claims, which the chat API turns into a refusal. Its `chat` plans a
+deep answer as the question itself, the only sub-question. Its cost is unknown.
 
 Its scores say the pipeline runs end to end; they say nothing of a real model's.
 """
@@ -114,6 +115,14 @@ class FakeModel(FakeEmbedder):
         reasoning_model=MODEL,
         embedding_model="fake-hashed-words",
     )
+
+    def chat(
+        self, messages: list[dict[str, Any]], model: ChatModel = "fast", json_schema: Any = None
+    ) -> ChatResult:
+        """The plan of a deep answer (`app.deep.plan`): the question itself, the only
+        sub-question, so deep mode retrieves and answers as fast mode does."""
+        reply = {"sub_questions": [messages[-1]["content"]]}
+        return ChatResult(text=json.dumps(reply), model=MODEL, usage=None, cost=None, data=reply)
 
     def chat_stream(
         self, messages: list[dict[str, Any]], model: ChatModel = "fast", json_schema: Any = None

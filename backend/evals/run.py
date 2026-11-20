@@ -10,7 +10,9 @@ scanned PDF fails to ingest without OCR, and the run stops. `--subset` leaves ou
 of a kind in `evals.questions.SKIPPED_KINDS` and answers with `evals.fake.FakeModel`, so it
 needs no endpoint and no key. A `--subset` run also checks `evals/floors.json`: it names
 each metric under its floor on stderr and exits 1, after the table and the results file
-are written; a full run has no floor. Either way it needs `DATABASE_URL` to point at Postgres with
+are written; a full run has no floor. `--subset --deep` asks every question in deep mode,
+checks the file's `deep` section and writes no results file, so the committed results stay
+the fast run's. Either way it needs `DATABASE_URL` to point at Postgres with
 pgvector: the run creates its tables in a schema of its own, dropped at the end, so it
 leaves nothing in the database, even one that already holds the app's tables.
 
@@ -35,7 +37,7 @@ from typing import Any
 import pymupdf
 from sqlalchemy import Engine, create_engine, insert, select, text
 
-from app.answer import chat_events
+from app.answer import AnswerMode, chat_events
 from app.db import documents, ingestion_status, init_db, metadata
 from app.documents import Limits, get_or_create_collection, stored_path
 from app.ingest import Embedder, IngestWorker
@@ -119,8 +121,9 @@ def ask_all(
     *,
     llm: Any,
     embedder: Embedder | None = None,
+    mode: AnswerMode = "fast",
 ) -> list[Outcome]:
-    """Ingest the questions' PDFs, then ask each question in fast mode, as the chat route
+    """Ingest the questions' PDFs, then ask each question in `mode`, as the chat route
     does. `llm` is an `app.llm.LLMClient` or a stand-in; it embeds too unless `embedder`
     is given.
 
@@ -132,7 +135,9 @@ def ask_all(
     outcomes = []
     for q in questions:
         before = counted.calls
-        events = chat_events(engine, COLLECTION, q.question, llm=counted, embedder=embedder)
+        events = chat_events(
+            engine, COLLECTION, q.question, mode=mode, llm=counted, embedder=embedder
+        )
         outcome = outcome_from_events(q.id, events)
         if counted.calls == before:
             outcome = replace(outcome, cost=0.0)
@@ -209,10 +214,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="have the fast model judge answer accuracy (full runs only)",
     )
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="ask every subset question in deep mode (needs --subset; writes no results file)",
+    )
     parser.add_argument("--out", type=Path, default=RESULTS, help="where the results file goes")
     args = parser.parse_args(argv)
     if args.subset and args.judge:
         parser.error("--judge needs a real model; the subset answers with the fake one")
+    if args.deep and not args.subset:
+        parser.error("--deep needs --subset; a full deep run is the owner's")
 
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url.startswith("postgresql"):
@@ -238,38 +250,48 @@ def main(argv: Sequence[str] | None = None) -> int:
     judge = Judge(llm) if args.judge else None
     try:
         with scratch_engine(url) as engine:
-            outcomes = ask_all(engine, questions, llm=llm, embedder=embedder)
+            outcomes = ask_all(
+                engine,
+                questions,
+                llm=llm,
+                embedder=embedder,
+                mode="deep" if args.deep else "fast",
+            )
         scores = score(questions, outcomes, judge=judge)
     finally:
         llm.close()
 
     day = today()
     pdfs = sorted({q.pdf for q in questions})
-    run = "subset" if args.subset else "full"
-    results = {
-        "date": day.isoformat(),
-        "run": run,
-        "judge": judge is not None,
-        "model": llm.config.fast_model,
-        "embedding_model": llm.config.embedding_model,
-        "pdfs": pdfs,
-        "questions": len(questions),
-        "scores": scores.as_json(),
-        "judge_cost_usd": judge.cost if judge else None,
-        "results": scores.results,
-    }
-    args.out.mkdir(parents=True, exist_ok=True)
-    path = results_file(args.out, day)
-    path.write_text(json.dumps(results, indent=2) + "\n")
+    run = "deep" if args.deep else ("subset" if args.subset else "full")
+    path = None
+    if not args.deep:
+        results = {
+            "date": day.isoformat(),
+            "run": run,
+            "judge": judge is not None,
+            "model": llm.config.fast_model,
+            "embedding_model": llm.config.embedding_model,
+            "pdfs": pdfs,
+            "questions": len(questions),
+            "scores": scores.as_json(),
+            "judge_cost_usd": judge.cost if judge else None,
+            "results": scores.results,
+        }
+        args.out.mkdir(parents=True, exist_ok=True)
+        path = results_file(args.out, day)
+        path.write_text(json.dumps(results, indent=2) + "\n")
 
     print(f"Eval, {run} run of {day.isoformat()}: {len(questions)} questions on {len(pdfs)} PDFs")
     print(f"Model: {llm.config.fast_model}" + (", judged by the same model" if judge else ""))
     print()
     print(table(scores))
-    print()
-    print(f"Results: {path}")
+    if path is not None:
+        print()
+        print(f"Results: {path}")
     if args.subset:
-        under = below_floors(scores, json.loads(FLOORS.read_text()))
+        floors = json.loads(FLOORS.read_text())
+        under = below_floors(scores, floors["deep"] if args.deep else floors)
         for line in under:
             print(line, file=sys.stderr)
         if under:
