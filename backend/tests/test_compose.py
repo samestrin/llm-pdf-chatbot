@@ -88,6 +88,52 @@ def test_compose_passes_the_answer_settings_to_the_backend():
         assert f"{name}: ${{{name}:-}}" in compose, name
 
 
+# Reasoning-model prices: the same both-or-neither pair as the fast prices, so a deep
+# answer can be priced. Empty by default: a deep answer's cost stays null, never 0.
+REASONING_PRICE_VARS = [
+    "LLM_PRICE_REASONING_PER_MTOK_IN",
+    "LLM_PRICE_REASONING_PER_MTOK_OUT",
+]
+
+
+def test_compose_passes_the_reasoning_prices_empty_by_default():
+    compose = (REPO / "docker-compose.yml").read_text()
+    for name in REASONING_PRICE_VARS:
+        assert f"{name}: ${{{name}:-}}" in compose, name
+
+
+@needs_docker
+def test_backend_receives_the_reasoning_prices_from_the_environment():
+    values = {name: f"value-{name}" for name in REASONING_PRICE_VARS}
+    environment = compose_backend_env(values)
+    for name, value in values.items():
+        assert environment[name] == value
+
+
+def test_env_example_lists_the_reasoning_prices_commented_with_the_null_note():
+    lines = (REPO / ".env.example").read_text().splitlines()
+    for name in REASONING_PRICE_VARS:
+        assert f"# {name}=" in lines, name
+    # The comment block above the pair carries the "empty means null, never 0" note.
+    i = lines.index(f"# {REASONING_PRICE_VARS[0]}=") - 1
+    note = []
+    while i >= 0 and lines[i].startswith("#"):
+        note.append(lines[i])
+        i -= 1
+    note_text = " ".join(note)
+    assert "null" in note_text and "never 0" in note_text
+
+
+def test_readme_documents_the_reasoning_prices_in_the_configuration_table():
+    readme = (REPO / "README.md").read_text()
+    row = "| `LLM_PRICE_REASONING_PER_MTOK_IN`, `LLM_PRICE_REASONING_PER_MTOK_OUT` |"
+    assert row in readme
+
+
+def test_readme_no_longer_says_only_fast_prices_can_be_set():
+    assert "Only fast-model prices" not in (REPO / "README.md").read_text()
+
+
 # Every variable the README documents in backticks reaches the backend through compose,
 # except these, which compose itself uses (the db service and the published ports).
 COMPOSE_LEVEL_VARS = {
