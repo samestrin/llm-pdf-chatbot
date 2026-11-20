@@ -8,12 +8,14 @@ import pytest
 from sqlalchemy import create_engine, func, insert, inspect, select, text
 
 from app.db import chunks, collections, documents, init_db, metadata, pages
+from app.deep import PLAN_SCHEMA, DeepSettings, RunLimits, plan
 from app.llm import ChatResult, LLMResponseError
 from evals import run as eval_run
-from evals.fake import FakeEmbedder, FakeModel
+from evals.fake import MODEL, FakeEmbedder, FakeModel
 from evals.questions import Question, load_questions
 from evals.run import ask_all, ingest, main, outcome_from_events, results_file, table
 from evals.score import Claim, Judge, Outcome, Ratio, score
+from evals.sources import EVALS
 
 CONTRACT = "contract-wmf-grant-agreement.pdf"
 OTHER = "report-cbo-work-in-2018.pdf"
@@ -516,3 +518,138 @@ def test_a_model_call_without_a_price_still_makes_the_cost_unknown(postgres_engi
     [out] = ask_all(postgres_engine, [NONSENSE], llm=model, embedder=model)
 
     assert out.cost is None
+
+
+# --- Deep mode in the subset ---
+
+
+def test_the_fake_model_plans_the_question_as_its_only_sub_question():
+    messages = [
+        {"role": "system", "content": "the plan rules"},
+        {"role": "user", "content": "What is XK42?"},
+    ]
+
+    result = FakeModel().chat(messages, model="reasoning", json_schema=PLAN_SCHEMA)
+
+    assert result.data == {"sub_questions": ["What is XK42?"]}
+    assert json.loads(result.text) == result.data
+    assert result.model == MODEL
+    assert result.usage is None
+    assert result.cost is None
+
+
+def test_the_deep_plan_of_the_fake_model_passes_the_plan_format_check():
+    sub_questions, result = plan(FakeModel(), "What is XK42?", [], RunLimits(DeepSettings()))
+
+    assert sub_questions == ["What is XK42?"]
+    assert result.cost is None
+
+
+def test_ask_all_in_deep_mode_steps_and_finishes_each_question(postgres_engine, monkeypatch):
+    monkeypatch.delenv("OCR_URL", raising=False)
+    qs = [q for q in load_questions() if q.pdf == CONTRACT][:2]
+    model = FakeModel()
+    recorded = []
+    real_chat_events = eval_run.chat_events
+
+    def record(*args, **kwargs):
+        assert kwargs.get("mode") == "deep"
+        events = list(real_chat_events(*args, **kwargs))
+        recorded.append(events)
+        return iter(events)
+
+    monkeypatch.setattr(eval_run, "chat_events", record)
+
+    outcomes = ask_all(postgres_engine, qs, llm=model, embedder=model, mode="deep")
+
+    assert [o.question_id for o in outcomes] == [q.id for q in qs]
+    assert all(o.error is None for o in outcomes)
+    assert len(recorded) == len(qs)
+    for events in recorded:
+        assert any(e["type"] == "step" for e in events)
+        done = [e for e in events if e["type"] == "done"]
+        assert len(done) == 1
+        assert done[0]["mode"] == "deep"
+
+
+def test_deep_subset_run_prints_the_deep_table_and_writes_no_results(
+    postgres_url, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("DATABASE_URL", postgres_url)
+    monkeypatch.delenv("OCR_URL", raising=False)
+
+    assert main(["--subset", "--deep", "--out", str(tmp_path)]) == 0
+
+    printed = capsys.readouterr().out
+    assert "deep run" in printed
+    assert "| Measure | Score |" in printed
+    assert "Results:" not in printed
+    assert not list(tmp_path.iterdir())
+
+
+def test_deep_is_refused_without_the_subset(tmp_path, capsys):
+    with pytest.raises(SystemExit) as exit_:
+        main(["--deep", "--out", str(tmp_path)])
+
+    assert exit_.value.code == 2
+    err = capsys.readouterr().err
+    assert "error: --deep" in err
+    assert "--subset" in err.split("error: --deep", 1)[1]
+    assert not list(tmp_path.iterdir())
+
+
+def floors_with_deep(deep: dict) -> dict:
+    """A floors file whose fast section passes any run and whose deep section is `deep`."""
+    zero = {"answer_accuracy": 0.0, "citation_precision": 0.0, "refusal_accuracy": 0.0}
+    return zero | {"max_errors": 0, "deep": deep}
+
+
+def test_deep_subset_run_under_its_floor_exits_1_and_writes_no_results(
+    postgres_url, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("DATABASE_URL", postgres_url)
+    monkeypatch.delenv("OCR_URL", raising=False)
+    # The deep accuracy is under 1.0; the fast section would pass, so only the deep
+    # section can turn this run to 1.
+    floors_path = tmp_path / "floors.json"
+    deep = {"answer_accuracy": 1.0, "citation_precision": 0.0, "refusal_accuracy": 0.0}
+    floors_path.write_text(json.dumps(floors_with_deep(deep | {"max_errors": 0})))
+    monkeypatch.setattr(eval_run, "FLOORS", floors_path)
+    out = tmp_path / "out"
+
+    assert main(["--subset", "--deep", "--out", str(out)]) == 1
+
+    captured = capsys.readouterr()
+    assert "| Measure | Score |" in captured.out
+    err_lines = captured.err.splitlines()
+    assert len(err_lines) == 1
+    assert "answer_accuracy" in err_lines[0]
+    assert not out.exists() or not list(out.iterdir())
+
+
+def test_deep_subset_run_checks_the_deep_section_not_the_fast_floors(
+    postgres_url, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("DATABASE_URL", postgres_url)
+    monkeypatch.delenv("OCR_URL", raising=False)
+    # Fast floors no run could meet, deep floors every run meets: a deep run passes.
+    ones = {"answer_accuracy": 1.0, "citation_precision": 1.0, "refusal_accuracy": 1.0}
+    zeros = {"answer_accuracy": 0.0, "citation_precision": 0.0, "refusal_accuracy": 0.0}
+    floors_path = tmp_path / "floors.json"
+    floors_path.write_text(json.dumps(ones | {"max_errors": 0, "deep": zeros | {"max_errors": 0}}))
+    monkeypatch.setattr(eval_run, "FLOORS", floors_path)
+
+    assert main(["--subset", "--deep", "--out", str(tmp_path / "out")]) == 0
+
+    assert capsys.readouterr().err == ""
+
+
+def test_the_committed_floors_file_holds_a_deep_section_with_the_four_settings():
+    floors = json.loads((EVALS / "floors.json").read_text())
+
+    deep = floors["deep"]
+    assert set(deep) == {"answer_accuracy", "citation_precision", "refusal_accuracy", "max_errors"}
+    for key in ("answer_accuracy", "citation_precision", "refusal_accuracy"):
+        assert 0.0 <= deep[key] <= 1.0
+    assert isinstance(deep["max_errors"], int)
+    assert deep["max_errors"] >= 0
