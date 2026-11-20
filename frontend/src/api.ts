@@ -61,7 +61,8 @@ export interface Preset {
   label: string
   kind: 'key' | 'demo'
   chat_model: string
-  /** null when the preset cannot embed: it cannot take uploads. */
+  /** The preset's own embedding model; null when it has none. In a public demo the
+   * server embeds instead, with `PresetList.embedding_model`. */
   embedding_model: string | null
 }
 
@@ -70,6 +71,9 @@ export interface PresetList {
   public_demo: boolean
   /** The public notice names it; null outside a public demo. */
   upload_ttl_minutes: number | null
+  /** The model the server embeds every document and question with in a public demo,
+   * whatever the preset; null outside one. Older backends do not send it. */
+  embedding_model?: string | null
   presets: Preset[]
 }
 

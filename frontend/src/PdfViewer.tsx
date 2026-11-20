@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
-import { GlobalWorkerOptions, TextLayer, getDocument } from 'pdfjs-dist'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react'
+import { GlobalWorkerOptions, TextLayer, getDocument, type PDFDocumentProxy } from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { documentPdfUrl, type ClaimEvent } from './api'
 import { findQuote, type QuoteRange } from './quote'
@@ -8,6 +15,8 @@ import './PdfViewer.css'
 GlobalWorkerOptions.workerSrc = workerSrc
 
 export type Citation = Pick<ClaimEvent, 'document' | 'page' | 'quote' | 'boxes'>
+/** What the viewer opens: a citation, or a whole document from its first page (no quote). */
+export type Viewing = Pick<Citation, 'document' | 'page'> & Partial<Pick<Citation, 'quote' | 'boxes'>>
 
 // Widest the page is drawn, in CSS pixels; narrower when the viewer is.
 const MAX_WIDTH = 800
@@ -41,15 +50,19 @@ function highlight(divs: HTMLElement[], ranges: QuoteRange[]): HTMLElement[] {
   })
 }
 
-/** One cited page of a stored PDF, with the quote highlighted or a notice that it was not found. */
+/** A stored PDF, one page at a time, opened at the cited page with the quote highlighted
+ * (or a notice that it was not found); opened from the documents list, at its first page. */
 export default function PdfViewer({
   citation,
   onClose,
 }: {
-  citation: Citation
+  citation: Viewing
   onClose: () => void
 }) {
-  const { document: doc, page, quote, boxes } = citation
+  const { document: doc, page: cited, quote = '', boxes } = citation
+  // The page shown; Previous and Next move it, the quote is looked for on the cited page only.
+  const [page, setPage] = useState(cited)
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [view, setView] = useState<View>({ state: 'loading' })
   // Bumped by Retry to open the PDF again.
   const [attempt, setAttempt] = useState(0)
@@ -63,13 +76,41 @@ export default function PdfViewer({
   const canvas = useRef<HTMLCanvasElement>(null)
   const textLayer = useRef<HTMLDivElement>(null)
 
+  const fail = useCallback(
+    (err: unknown) => {
+      const reason = err instanceof Error ? err.message : String(err)
+      setView({ state: 'error', message: `Could not open ${doc.filename}: ${reason}` })
+    },
+    [doc.filename],
+  )
+
+  // The PDF is fetched once per opening (and again on Retry); paging reuses it.
   useEffect(() => {
     let cancelled = false
-    let layer: TextLayer | null = null
     const task = getDocument({ url: documentPdfUrl(doc.id) })
+    task.promise.then(
+      (loaded) => {
+        if (!cancelled) setPdf(loaded)
+      },
+      (err: unknown) => {
+        if (!cancelled) fail(err)
+      },
+    )
+    return () => {
+      cancelled = true
+      setPdf(null)
+      void task.destroy()
+    }
+  }, [doc.id, fail, attempt])
 
-    async function open() {
-      const pdf = await task.promise
+  useEffect(() => {
+    if (!pdf) return
+    let cancelled = false
+    let layer: TextLayer | null = null
+    // The quote and its boxes belong to the cited page; another page is shown plain.
+    const atCited = page === cited && quote.trim() !== ''
+
+    async function open(pdf: PDFDocumentProxy) {
       if (page < 1 || page > pdf.numPages) throw new Error(`it has no page ${page}`)
       const pdfPage = await pdf.getPage(page)
       if (cancelled) return
@@ -99,6 +140,10 @@ export default function PdfViewer({
       await layer.render()
       if (cancelled) return
 
+      if (!atCited) {
+        setView({ state: 'ready', pages: pdf.numPages, boxes: null, located: true })
+        return
+      }
       // Bounding boxes are used only when the API returns them; otherwise the
       // quote is searched for in the text layer.
       if (boxes && boxes.length > 0) {
@@ -130,20 +175,14 @@ export default function PdfViewer({
       marks[0]?.scrollIntoView?.({ block: 'center' })
     }
 
-    open().catch((err: unknown) => {
-      if (cancelled) return
-      const reason = err instanceof Error ? err.message : String(err)
-      setView({
-        state: 'error',
-        message: `Could not open ${doc.filename}: ${reason}`,
-      })
+    open(pdf).catch((err: unknown) => {
+      if (!cancelled) fail(err)
     })
     return () => {
       cancelled = true
       layer?.cancel()
-      void task.destroy()
     }
-  }, [doc.id, doc.filename, page, quote, boxes, attempt])
+  }, [pdf, page, cited, quote, boxes, fail])
 
   // Focus moves into the viewer when it opens; the opener puts it back on close.
   useEffect(() => dialog.current?.focus(), [])
@@ -175,6 +214,14 @@ export default function PdfViewer({
     setView({ state: 'loading' })
     setAttempt((n) => n + 1)
   }
+
+  function turnTo(next: number) {
+    setView({ state: 'loading' })
+    setPage(next)
+  }
+
+  // Known once the PDF has loaded; the buttons stay off until then.
+  const pages = pdf?.numPages ?? null
 
   const pageStyle = (
     size
@@ -209,9 +256,27 @@ export default function PdfViewer({
             </>
           )}
         </h3>
-        <button type="button" aria-label="Close" onClick={onClose}>
-          ×
-        </button>
+        <div className="pdf-viewer-controls">
+          <button
+            type="button"
+            className="secondary small"
+            disabled={pages === null || page <= 1}
+            onClick={() => turnTo(page - 1)}
+          >
+            Previous page
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            disabled={pages === null || page >= pages}
+            onClick={() => turnTo(page + 1)}
+          >
+            Next page
+          </button>
+          <button type="button" aria-label="Close" onClick={onClose}>
+            ×
+          </button>
+        </div>
       </header>
       {view.state === 'loading' && (
         <p className="loading">

@@ -102,4 +102,42 @@ describe('PdfViewer', () => {
     expect(fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })).toBe(false)
     expect(retry).toHaveFocus()
   })
+
+  it('pages through the document with Previous and Next, fetching it once', async () => {
+    vi.mocked(getDocument).mockReturnValue(task(Promise.resolve(pdf)))
+    render(<PdfViewer citation={citation} onClose={() => {}} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'report.pdf, page 2' })
+    expect(await within(dialog).findByText('Page 2 of 2')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Next page' })).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Previous page' }))
+
+    expect(await within(dialog).findByText('Page 1 of 2')).toBeInTheDocument()
+    expect(dialog).toHaveAccessibleName('report.pdf, page 1')
+    expect(within(dialog).getByRole('button', { name: 'Previous page' })).toBeDisabled()
+    // The quote belongs to page 2: page 1 says nothing about it.
+    expect(within(dialog).queryByText('Quote not located on this page.')).toBeNull()
+    expect(getDocument).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a document from its first page with no quote and no notice', async () => {
+    vi.mocked(getDocument).mockReturnValue(task(Promise.resolve(pdf)))
+    render(
+      <PdfViewer
+        citation={{ document: { id: 'd1', filename: 'report.pdf' }, page: 1 }}
+        onClose={() => {}}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'report.pdf, page 1' })
+    expect(await within(dialog).findByText('Page 1 of 2')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('status')).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Next page' })).toBeEnabled()
+  })
+
+  it('says when the cited quote is not on the page', async () => {
+    vi.mocked(getDocument).mockReturnValue(task(Promise.resolve(pdf)))
+    render(<PdfViewer citation={citation} onClose={() => {}} />)
+    expect(await screen.findByText('Quote not located on this page.')).toBeInTheDocument()
+  })
 })

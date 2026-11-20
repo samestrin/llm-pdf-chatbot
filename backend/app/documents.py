@@ -26,7 +26,7 @@ from sqlalchemy import Engine, delete, exists, insert, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
-from app.credentials import Credentials, request_credentials
+from app.credentials import DEMO, Credentials, request_credentials
 from app.db import SHARED_OWNER, collections, documents, ingestion_status
 from app.db import pages as page_table
 from app.session import (
@@ -131,7 +131,18 @@ def get_or_create_collection(
 def check_embedding(request: Request, found, credentials: Credentials | None, action: str):
     """A 409 with the plain message when the request's preset or embedding model is not the
     one the collection was embedded with; its vectors could not be compared. A collection
-    embedded with the server's own model (no preset) is asked only without credentials."""
+    embedded with the server's own model (no preset) is asked only without credentials.
+    In a public demo the server embeds every request, so only its model is compared."""
+    server = request.app.state.server_embedding
+    if server is not None:
+        # A public demo: the server embeds everything, whatever the request's preset.
+        if found.embedding_model == server.model:
+            return
+        raise HTTPException(
+            409,
+            f"This collection was embedded with {found.embedding_model or 'no embedding model'}; "
+            f"this server embeds with {server.model}, so it cannot {action}",
+        )
     preset = credentials.preset if credentials else None
     if found.embedding_preset is None:
         if preset is None:
@@ -164,11 +175,13 @@ def _upload_collection(
     if found is not None:
         require_owner(session, found.session_id)
     preset = credentials.preset if credentials else None
-    embedding = (
-        (preset.id, preset.embedding_model)
-        if preset
-        else (None, os.environ.get("LLM_EMBEDDING_MODEL", "").strip() or None)
-    )
+    server = request.app.state.server_embedding
+    if server is not None:
+        embedding = (DEMO, server.model)
+    elif preset:
+        embedding = (preset.id, preset.embedding_model)
+    else:
+        embedding = (None, os.environ.get("LLM_EMBEDDING_MODEL", "").strip() or None)
     collection_id = get_or_create_collection(engine, name, session, embedding)
     with engine.connect() as conn:
         found = conn.execute(
@@ -208,7 +221,8 @@ FORBIDDEN = error_response(f"`{READ_ONLY}`, or `{CROSS_SITE}` in a public demo")
     description=(
         "Upload a PDF into the named collection, creating the collection if it is new, and "
         "queue it for ingestion (reading, keyword index, embeddings) in the background, "
-        "embedded with the request's model preset and key when it sends them. "
+        "embedded with the request's model preset and key when it sends them; in a public "
+        "demo the server embeds it with its own model, whatever the preset. "
         f"Non-PDF content and PDFs over the page limit return 422; files over the size limit "
         f"return 413. A collection embedded with another preset or embedding model returns "
         f"409. In a public demo an upload that would pass the session's cap on collections or on "
@@ -301,8 +315,12 @@ def upload_document(
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    # In memory only: the worker embeds with them and they are never stored.
-    request.app.state.worker.submit(document_id, credentials)
+    if request.app.state.server_embedding is not None:
+        # A public demo: the server embeds it, and the visitor's key is not passed on.
+        request.app.state.worker.submit(document_id, session=session)
+    else:
+        # In memory only: the worker embeds with them and they are never stored.
+        request.app.state.worker.submit(document_id, credentials)
     return {
         "id": document_id,
         "collection": collection,

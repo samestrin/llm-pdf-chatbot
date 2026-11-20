@@ -66,7 +66,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import partial
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import Path as PathParam
@@ -76,7 +76,7 @@ from sqlalchemy import Engine, select
 
 from app.citation import find_quote
 from app.credentials import Credentials, client_for, plain_model_error, request_credentials
-from app.db import documents
+from app.db import SHARED_OWNER, documents
 from app.deep import (
     DeepBudgetError,
     DeepConfigError,
@@ -113,6 +113,9 @@ from app.retrieval import (
     retrieve,
 )
 from app.session import current_session, find_collection
+
+if TYPE_CHECKING:
+    from app.server_embedding import ServerEmbedding
 
 ANSWER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -310,12 +313,16 @@ def chat_events(
     llm: LLMClient | None = None,
     embedder: Embedder | None = None,
     credentials: Credentials | None = None,
+    server_embedding: "ServerEmbedding | None" = None,
+    session: str = SHARED_OWNER,
 ) -> Iterator[dict[str, Any]]:
     """Retrieve from the collection (an id, or the shared owner's name; see `retrieve`),
     then answer with the last `CHAT_HISTORY_TURNS` turns
     of `history`. With `credentials`, one client for the visitor's preset and key embeds the
     question and answers it, in both modes on the preset's chat model. Otherwise, without
     `llm`, a model client comes from the environment; a missing setting is an error event.
+    With `server_embedding` (a public demo) the server embeds the question, counted against
+    `session`'s cap, and the visitor's key only answers it.
     The rerank endpoint comes from the environment, except in a public demo, which has none."""
     with ExitStack() as stack:
         try:
@@ -331,6 +338,8 @@ def chat_events(
             elif llm is None:
                 llm = LLMClient(LLMConfig.from_env())
                 stack.callback(llm.close)
+            if server_embedding is not None:
+                embedder = stack.enter_context(server_embedding.embedder(session))
             reranker = None if public_demo() else Reranker.from_env()
             if reranker is not None:
                 stack.callback(reranker.close)
@@ -607,7 +616,9 @@ class ChatRequest(BaseModel):
         404: json_error_response("`collection not found`: in a public demo, not this session's"),
         409: json_error_response(
             "The collection was embedded with another preset or embedding model: `This "
-            "collection was embedded with <model>; switch back to <preset> to ask about it`"
+            "collection was embedded with <model>; switch back to <preset> to ask about it`, "
+            "or in a public demo `...; this server embeds with <model>, so it cannot ask "
+            "about it`"
         ),
     },
 )
@@ -633,6 +644,8 @@ def chat(
         llm=state.llm,
         embedder=state.embedder,
         credentials=credentials,
+        server_embedding=state.server_embedding,
+        session=current_session(request),
     )
     lines = (json.dumps(event) + "\n" for event in events)
     return NDJSONResponse(lines)

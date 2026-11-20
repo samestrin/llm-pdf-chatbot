@@ -8,7 +8,6 @@ import {
   uploadDocument,
   type Collection,
   type DocumentInfo,
-  type Preset,
 } from './api'
 import type { ModelCredentials } from './modelAccess'
 
@@ -131,6 +130,7 @@ export default function DocumentsPanel({
   onActiveChange,
   onCollections,
   onLoadError,
+  onView,
   demo,
 }: {
   /** The active collection, owned by the page: uploads go into it and the chat asks in it. */
@@ -140,12 +140,13 @@ export default function DocumentsPanel({
   onCollections?: (collections: Collection[]) => void
   /** Called with the reason a load failed, and with `null` when one succeeds. */
   onLoadError?: (message: string | null) => void
-  /** Present in a public demo: the notice's TTL, the visitor's credentials and the
-   * chosen preset, and what to do when none are saved (the page opens the key panel). */
+  /** Open a document in the viewer; `from` is the control that asked, for focus on close. */
+  onView?: (doc: DocumentInfo, from: HTMLElement) => void
+  /** Present in a public demo: the notice's TTL, the visitor's credentials, and what to
+   * do when none are saved (the page opens the key panel). */
   demo?: {
     ttlMinutes: number | null
     credentials: ModelCredentials | null
-    preset: Preset | null
     onMissing: () => void
   }
 }) {
@@ -154,14 +155,9 @@ export default function DocumentsPanel({
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const collection = active.name.trim()
-  // In a public demo an upload embeds with the visitor's credentials: without them
-  // it cannot start, and a preset with no embedding model cannot take uploads at all.
+  // In a public demo an upload needs a key or demo code; the server embeds it, so any
+  // preset can upload, one with no embedding model of its own too.
   const needsKey = demo !== undefined && !demo.credentials
-  const noEmbed =
-    demo !== undefined &&
-    demo.credentials !== null &&
-    demo.preset !== null &&
-    demo.preset.embedding_model === null
   const fileInput = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
@@ -223,12 +219,6 @@ export default function DocumentsPanel({
       demo?.onMissing()
       return
     }
-    if (noEmbed) {
-      setActionError(
-        `${demo?.preset?.label} has no embedding model, so it cannot take uploads.`,
-      )
-      return
-    }
     setActionError(null)
     setFailedUpload(null)
     setProgress(0)
@@ -256,13 +246,6 @@ export default function DocumentsPanel({
       setFailedUpload(null)
       setActionError('Uploading needs a demo code or your own key.')
       demo?.onMissing()
-      return
-    }
-    if (noEmbed) {
-      setFailedUpload(null)
-      setActionError(
-        `${demo?.preset?.label} has no embedding model, so it cannot take uploads.`,
-      )
       return
     }
     if (!collection) {
@@ -306,7 +289,7 @@ export default function DocumentsPanel({
 
   async function onSample() {
     const name = collection
-    if (!name || noEmbed) return
+    if (!name) return
     if (needsKey) {
       setActionError('Uploading needs a demo code or your own key.')
       demo?.onMissing()
@@ -374,13 +357,7 @@ export default function DocumentsPanel({
           onChange={onActiveChange}
           onRemove={() => void onRemoveEmpty()}
         />
-        {noEmbed ? (
-          <p className="key-note">
-            {demo?.preset?.label} has no embedding model, so it cannot take uploads. Pick another
-            preset in the key panel to upload.
-          </p>
-        ) : (
-          <div className="drop-zone">
+        <div className="drop-zone">
             <p>{dragging ? 'Drop the PDF to upload it' : 'Drop a PDF here, or choose one.'}</p>
             {needsKey && (
               <p className="key-note">Uploading needs a demo code or your own key.</p>
@@ -400,8 +377,7 @@ export default function DocumentsPanel({
                 Add a key or demo code
               </button>
             )}
-          </div>
-        )}
+        </div>
         {progress !== null && (
           <p>
             Uploading {Math.round(progress * 100)}%{' '}
@@ -436,15 +412,13 @@ export default function DocumentsPanel({
         <div className="empty-state">
           <h3>No documents yet</h3>
           <p>Drop a PDF on this panel or choose one above. Once it is read, ask about it in the chat.</p>
-          {!noEmbed && (
-            <button
-              type="button"
-              onClick={() => void onSample()}
-              disabled={!collection || progress !== null}
-            >
-              Try a sample PDF
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void onSample()}
+            disabled={!collection || progress !== null}
+          >
+            Try a sample PDF
+          </button>
         </div>
       )}
       {!firstRun && collections.map((c) => (
@@ -458,17 +432,26 @@ export default function DocumentsPanel({
             {c.documents.map((doc) => (
               <li key={doc.id} aria-label={doc.filename}>
                 <div className="document-row">
-                  <strong className="filename" title={doc.filename}>
-                    {doc.filename}
-                  </strong>
                   <button
                     type="button"
-                    className="delete-button"
-                    aria-label={`Delete ${doc.filename}`}
-                    onClick={() => void onDelete(doc)}
+                    className="filename open-document"
+                    title={doc.filename}
+                    aria-label={`View ${doc.filename}`}
+                    onClick={(e) => onView?.(doc, e.currentTarget)}
                   >
-                    Delete
+                    {doc.filename}
                   </button>
+                  {/* The shared sample can be read and asked, never changed. */}
+                  {!c.read_only && (
+                    <button
+                      type="button"
+                      className="delete-button"
+                      aria-label={`Delete ${doc.filename}`}
+                      onClick={() => void onDelete(doc)}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
                 <StatusLine doc={doc} />
               </li>

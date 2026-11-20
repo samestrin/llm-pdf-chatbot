@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import AnswerMeta from './AnswerMeta'
 import {
   streamChat,
@@ -12,9 +12,6 @@ import {
 } from './api'
 import ThinkingIndicator from './ThinkingIndicator'
 import type { ModelCredentials } from './modelAccess'
-
-// pdf.js is large; load the viewer the first time a citation is opened.
-const PdfViewer = lazy(() => import('./PdfViewer'))
 
 const DEEP_NOTE =
   'Deep mode uses the reasoning model: it plans sub-questions and searches for each, so it is slower and can cost more.'
@@ -284,6 +281,9 @@ export default function Chat({
   empty = false,
   ingesting = {},
   modelAccess,
+  suggestions = [],
+  onOpen,
+  viewer,
 }: {
   /** The active collection, chosen in the documents panel; '' while none is named. */
   collection: string
@@ -296,13 +296,16 @@ export default function Chat({
   /** In a public demo: the visitor's credentials, and what to do when none are saved
    * (the page opens the key panel). Without it, questions need no credentials. */
   modelAccess?: { credentials: ModelCredentials | null; onMissing: () => void }
+  /** Questions the active collection is known to answer (the sample's), shown as chips. */
+  suggestions?: string[]
+  /** Open the viewer at a citation; `from` is the chip, for focus on close. */
+  onOpen?: (claim: ClaimEvent, from: HTMLButtonElement) => void
+  /** The PDF viewer when it is open, shown above the question box. */
+  viewer?: ReactNode
 }) {
   const [question, setQuestion] = useState('')
   const [mode, setMode] = useState<ChatMode>('fast')
   const [turns, setTurns] = useState<Turn[]>([])
-  const [opened, setOpened] = useState<ClaimEvent | null>(null)
-  // The chip that opened the viewer, so closing it puts focus back there.
-  const chip = useRef<HTMLButtonElement | null>(null)
   const controller = useRef<AbortController | null>(null)
 
   useEffect(() => () => controller.current?.abort(), [])
@@ -330,14 +333,17 @@ export default function Chat({
     e.currentTarget.form?.requestSubmit()
   }
 
-  function onOpen(claim: ClaimEvent, from: HTMLButtonElement) {
-    chip.current = from
-    setOpened(claim)
-  }
-
-  function onClose() {
-    setOpened(null)
-    chip.current?.focus()
+  // A suggested question is asked at once; without a key or code it waits in the box
+  // while the page opens the key panel, as a typed one does.
+  function onSuggest(q: string) {
+    if (!collection || streaming) return
+    if (modelAccess && !modelAccess.credentials) {
+      setQuestion(q)
+      modelAccess.onMissing()
+      return
+    }
+    setQuestion('')
+    void run({ question: q, collection, mode }, turns.length)
   }
 
   /** Stream the answer into turn `index`: a new turn, or a failed one asked again. */
@@ -423,19 +429,27 @@ export default function Chat({
           <article aria-label="Question" className="question">{turn.question}</article>
           <Answer
             turn={turn}
-            onOpen={onOpen}
+            onOpen={onOpen ?? (() => {})}
             onRetry={streaming ? undefined : () => void run(turn, i)}
           />
         </div>
       ))}
-      {opened && (
-        <Suspense fallback={<p>Opening the PDF viewer…</p>}>
-          <PdfViewer
-            key={`${opened.chunk_id}:${opened.page}:${opened.quote}`}
-            citation={opened}
-            onClose={onClose}
-          />
-        </Suspense>
+      {viewer}
+      {suggestions.length > 0 && (
+        <ul className="suggestions" aria-label="Suggested questions">
+          {suggestions.map((q) => (
+            <li key={q}>
+              <button
+                type="button"
+                className="secondary small suggestion"
+                disabled={!collection || streaming}
+                onClick={() => onSuggest(q)}
+              >
+                {q}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
       <form onSubmit={onAsk} className="chat-form">
         {collection && (

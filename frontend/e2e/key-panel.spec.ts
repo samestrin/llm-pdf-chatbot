@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import type { Route } from '@playwright/test'
-import { expect, json, test } from './fixtures'
+import { SAMPLE_PDF_PATH, expect, json, test } from './fixtures'
 
 // The public demo: every model call needs a demo code or the visitor's own key.
 const PRESETS = {
@@ -261,19 +261,22 @@ test('the sample PDF needs a code or key too: the panel opens, then the upload c
   expect(headers['x-model-preset']).toBe('openai')
 })
 
-test('a preset with no embedding model cannot take uploads, and the page says why', async ({
+test('a preset with no embedding model can upload: the server embeds', async ({
   page,
+  api,
 }) => {
+  const headers: Record<string, string> = {}
+  api.on('POST', '/api/collections/default/documents', async (route) => {
+    Object.assign(headers, route.request().headers())
+    await route.fulfill({ status: 201, json: { id: 'n1', status: 'queued' } })
+  })
   await page.goto('/')
   await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
   await saveKey(page, 'Synthetic', 'sk-synthetic')
   const documents = page.getByRole('complementary', { name: 'Documents' })
-  await expect(
-    documents.getByText(
-      'Synthetic has no embedding model, so it cannot take uploads. Pick another preset in the key panel to upload.',
-    ),
-  ).toBeVisible()
-  await expect(documents.getByLabel('PDF', { exact: true })).toHaveCount(0)
+  await expect(documents.getByText(/no embedding model/)).toHaveCount(0)
+  await documents.getByLabel('PDF', { exact: true }).setInputFiles(SAMPLE_PDF_PATH)
+  await expect.poll(() => headers['x-model-preset']).toBe('synthetic')
 })
 
 test('the demo page with the key panel open has no serious accessibility violations', async ({

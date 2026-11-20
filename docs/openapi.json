@@ -8,7 +8,7 @@
     "/collections/{collection}/documents": {
       "post": {
         "summary": "Upload Document",
-        "description": "Upload a PDF into the named collection, creating the collection if it is new, and queue it for ingestion (reading, keyword index, embeddings) in the background, embedded with the request's model preset and key when it sends them. Non-PDF content and PDFs over the page limit return 422; files over the size limit return 413. A collection embedded with another preset or embedding model returns 409. In a public demo an upload that would pass the session's cap on collections or on uploaded bytes returns 409 until a delete frees room. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
+        "description": "Upload a PDF into the named collection, creating the collection if it is new, and queue it for ingestion (reading, keyword index, embeddings) in the background, embedded with the request's model preset and key when it sends them; in a public demo the server embeds it with its own model, whatever the preset. Non-PDF content and PDFs over the page limit return 422; files over the size limit return 413. A collection embedded with another preset or embedding model returns 409. In a public demo an upload that would pass the session's cap on collections or on uploaded bytes returns 409 until a delete frees room. There is no auth and there are no accounts. In a public demo a collection belongs to the browser session that made it: another session's collection or document returns 404, and the shared sample is read-only (403). There, an upload or delete sent from another site is refused (403).",
         "operationId": "upload_document_collections__collection__documents_post",
         "parameters": [
           {
@@ -859,7 +859,7 @@
             }
           },
           "409": {
-            "description": "The collection was embedded with another preset or embedding model: `This collection was embedded with <model>; switch back to <preset> to ask about it`",
+            "description": "The collection was embedded with another preset or embedding model: `This collection was embedded with <model>; switch back to <preset> to ask about it`, or in a public demo `...; this server embeds with <model>, so it cannot ask about it`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1240,6 +1240,17 @@
             ],
             "title": "Upload Ttl Minutes"
           },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
           "presets": {
             "items": {
               "$ref": "#/components/schemas/PresetInfo"
@@ -1252,6 +1263,7 @@
         "required": [
           "public_demo",
           "upload_ttl_minutes",
+          "embedding_model",
           "presets"
         ],
         "title": "PresetList"

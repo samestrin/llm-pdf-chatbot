@@ -94,12 +94,27 @@ describe('KeyPanel', () => {
     expect(screen.getByLabelText('Remember on this device')).not.toBeChecked()
   })
 
-  it('says why a preset with no embedding model cannot take uploads', () => {
+  it('never says a preset cannot take uploads: the server embeds for every preset', () => {
     setup()
-    expect(screen.queryByText(/no embedding model/)).toBeNull()
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'synthetic' } })
+    expect(screen.queryByText(/no embedding model|cannot take uploads/)).toBeNull()
+  })
+
+  it('says the key only writes answers, and names the server’s embedding model', () => {
+    render(
+      <KeyPanel
+        presets={presets}
+        embeddingModel="demo-embedding"
+        stored={null}
+        onSave={() => {}}
+        onClear={() => {}}
+        onClose={() => {}}
+      />,
+    )
     expect(
-      screen.getByText('Synthetic has no embedding model, so it cannot take uploads.'),
+      screen.getByText(
+        'Your key or code only writes the answers. Documents and questions are embedded on the server with demo-embedding.',
+      ),
     ).toBeInTheDocument()
   })
 

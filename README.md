@@ -68,8 +68,8 @@ Set `PUBLIC_DEMO=true` in a compose override, along with the `SESSION_SECRET` an
 - The page opens a key panel instead of asking: pick a preset from `GET /presets`, then paste your own key or a demo code. A question or file entered without one opens the panel and is kept while you add it. The key lives in the browser and is sent per request in the `X-Model-Preset` and `X-Model-Key` headers, or as `X-Demo-Code` with the `demo` preset.
 - Each browser gets a signed, HttpOnly `pdfchat_session` cookie. Its collections, documents, pages and PDFs are its own: another session gets 404. A visitor's collection expires after its TTL, and each session has a cap on collections and uploads.
 - Uploads and deletes from another site are refused (403), checked against the app's origin.
-- A collection uploaded with `PUBLIC_DEMO` off is the read-only sample: every session can read and ask it, none can change it. Upload it with the preset headers visitors will use.
-- A collection is asked only with the preset and embedding model it was built with; another one is refused with a plain message.
+- The server embeds every upload and every question itself, with its own gateway key (`DEMO_EMBEDDING_KEY`) on `demo-embedding`, and a per-session cap on embedding calls. The visitor's key or demo code only writes the answer, so any preset works, one with no embedding model too, and no demo code is needed.
+- A collection uploaded with `PUBLIC_DEMO` off is the read-only sample: every session can read and ask it, none can change or delete it, and the page shows no Delete for it. Upload it with a demo code, so it is embedded with `demo-embedding`. The page suggests questions the sample answers.
 
 The public demo needs **a fresh, empty database**: there are no migrations, and the backend refuses to start on a database made before collections had sessions. The header and preset details are in [docs/api.md](docs/api.md#model-credentials-in-a-public-demo).
 

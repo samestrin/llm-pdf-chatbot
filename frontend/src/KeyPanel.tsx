@@ -10,12 +10,15 @@ import type { ModelCredentials, StoredCredentials } from './modelAccess'
  */
 export default function KeyPanel({
   presets,
+  embeddingModel = null,
   stored,
   onSave,
   onClear,
   onClose,
 }: {
   presets: Preset[]
+  /** The model the server embeds every document and question with; null when none. */
+  embeddingModel?: string | null
   stored: StoredCredentials | null
   onSave: (credentials: ModelCredentials, remember: boolean) => void
   onClear: () => void
@@ -77,8 +80,11 @@ export default function KeyPanel({
           />{' '}
           Remember on this device
         </label>
-        {preset && preset.embedding_model === null && (
-          <p className="key-note">{preset.label} has no embedding model, so it cannot take uploads.</p>
+        {embeddingModel && (
+          <p className="key-note">
+            Your key or code only writes the answers. Documents and questions are embedded on the
+            server with {embeddingModel}.
+          </p>
         )}
         <div className="key-panel-buttons">
           <button type="submit" disabled={!secret.trim() || !preset}>

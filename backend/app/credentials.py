@@ -19,6 +19,7 @@ from fastapi import Header, HTTPException, Request
 
 from app.llm import (
     DEFAULT_TIMEOUT_SECONDS,
+    EmbedCapError,
     LLMClient,
     LLMConfig,
     LLMHTTPError,
@@ -167,12 +168,14 @@ def plain_model_error(exc: Exception, credentials: Credentials | None) -> str | 
     A rejected key (HTTP 401/403) names the preset's label; a provider rate limit (429)
     says to try again shortly. For a demo code the same statuses mean the code is used up
     or expired: the gateway turns a revoked or expired key down with 401/403 and an
-    exhausted budget with 429. Nothing here reads the body the endpoint sent: it can hold
+    exhausted budget with 429. A public demo session past its embedding cap says so. Nothing here reads the body the endpoint sent: it can hold
     the key or account details, and stays in the server's log alone. Without credentials
     (the server's own endpoint) the caller's existing wording applies.
     """
     if isinstance(exc, NoEmbeddingModelError):
         return "this preset has no embedding model"
+    if isinstance(exc, EmbedCapError):
+        return str(exc)
     if credentials is None or not isinstance(exc, LLMHTTPError):
         return None
     preset = credentials.preset
