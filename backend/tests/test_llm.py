@@ -119,7 +119,23 @@ def server():
     s.close()
 
 
-def make_client(server, timeout=5.0, api_key="sk-test", price_in=None, price_out=None):
+def make_client(
+    server,
+    timeout=5.0,
+    api_key="sk-test",
+    price_in=None,
+    price_out=None,
+    reasoning_price_in=None,
+    reasoning_price_out=None,
+):
+    # Passed only when asked for, so a test without reasoning prices runs on a config
+    # that does not know them yet.
+    reasoning_prices = {}
+    if reasoning_price_in is not None or reasoning_price_out is not None:
+        reasoning_prices = {
+            "reasoning_price_in_per_mtok": reasoning_price_in,
+            "reasoning_price_out_per_mtok": reasoning_price_out,
+        }
     return LLMClient(
         LLMConfig(
             base_url=server.url,
@@ -130,6 +146,7 @@ def make_client(server, timeout=5.0, api_key="sk-test", price_in=None, price_out
             timeout=timeout,
             fast_price_in_per_mtok=price_in,
             fast_price_out_per_mtok=price_out,
+            **reasoning_prices,
         )
     )
 
@@ -228,6 +245,70 @@ def test_config_rejects_bad_price(value):
     env = {**ENV, "LLM_PRICE_FAST_PER_MTOK_IN": value, "LLM_PRICE_FAST_PER_MTOK_OUT": "1"}
     with pytest.raises(LLMConfigError, match="LLM_PRICE_FAST_PER_MTOK_IN"):
         LLMConfig.from_env(env)
+
+
+def test_config_reasoning_prices_are_unset_by_default():
+    cfg = LLMConfig.from_env(ENV)
+    assert cfg.reasoning_price_in_per_mtok is None
+    assert cfg.reasoning_price_out_per_mtok is None
+
+
+def test_config_reads_reasoning_prices():
+    cfg = LLMConfig.from_env(
+        {
+            **ENV,
+            "LLM_PRICE_REASONING_PER_MTOK_IN": "1.5",
+            "LLM_PRICE_REASONING_PER_MTOK_OUT": " 6 ",
+        }
+    )
+    assert (cfg.reasoning_price_in_per_mtok, cfg.reasoning_price_out_per_mtok) == (1.5, 6.0)
+
+
+def test_config_accepts_explicit_zero_reasoning_prices():
+    cfg = LLMConfig.from_env(
+        {**ENV, "LLM_PRICE_REASONING_PER_MTOK_IN": "0", "LLM_PRICE_REASONING_PER_MTOK_OUT": "0"}
+    )
+    assert (cfg.reasoning_price_in_per_mtok, cfg.reasoning_price_out_per_mtok) == (0.0, 0.0)
+
+
+@pytest.mark.parametrize(
+    "name", ["LLM_PRICE_REASONING_PER_MTOK_IN", "LLM_PRICE_REASONING_PER_MTOK_OUT"]
+)
+def test_config_needs_both_reasoning_prices_or_neither(name):
+    with pytest.raises(LLMConfigError) as info:
+        LLMConfig.from_env({**ENV, name: "1.0"})
+    assert "LLM_PRICE_REASONING_PER_MTOK_IN" in str(info.value)
+    assert "LLM_PRICE_REASONING_PER_MTOK_OUT" in str(info.value)
+
+
+@pytest.mark.parametrize(
+    "name", ["LLM_PRICE_REASONING_PER_MTOK_IN", "LLM_PRICE_REASONING_PER_MTOK_OUT"]
+)
+@pytest.mark.parametrize("value", ["abc", "-1", "nan", "inf"])
+def test_config_rejects_bad_reasoning_price_naming_its_variable(name, value):
+    env = {
+        **ENV,
+        "LLM_PRICE_REASONING_PER_MTOK_IN": "1",
+        "LLM_PRICE_REASONING_PER_MTOK_OUT": "1",
+        name: value,
+    }
+    with pytest.raises(LLMConfigError) as info:
+        LLMConfig.from_env(env)
+    assert info.value.setting == name
+
+
+def test_config_reads_both_price_pairs_independently():
+    cfg = LLMConfig.from_env(
+        {
+            **ENV,
+            "LLM_PRICE_FAST_PER_MTOK_IN": "0.15",
+            "LLM_PRICE_FAST_PER_MTOK_OUT": "0.6",
+            "LLM_PRICE_REASONING_PER_MTOK_IN": "1.5",
+            "LLM_PRICE_REASONING_PER_MTOK_OUT": "6",
+        }
+    )
+    assert (cfg.fast_price_in_per_mtok, cfg.fast_price_out_per_mtok) == (0.15, 0.6)
+    assert (cfg.reasoning_price_in_per_mtok, cfg.reasoning_price_out_per_mtok) == (1.5, 6.0)
 
 
 # --- chat ---
@@ -440,6 +521,61 @@ def test_reasoning_cost_is_none_even_with_fast_prices(server):
     assert result.model == "big"
     assert result.usage == Usage(12, 5)
     assert result.cost is None
+
+
+def test_reasoning_cost_from_reasoning_prices(server):
+    server.reply(
+        chat_reply("deep", usage={"prompt_tokens": 1_000_000, "completion_tokens": 500_000})
+    )
+    result = make_client(server, reasoning_price_in=3.0, reasoning_price_out=12.0).chat(
+        [], model="reasoning"
+    )
+    assert result.cost == pytest.approx(9.0)
+
+
+def test_fast_cost_is_none_with_only_reasoning_prices(server):
+    server.reply(chat_reply("hello", usage=USAGE))
+    result = make_client(server, reasoning_price_in=3.0, reasoning_price_out=12.0).chat([])
+    assert result.usage == Usage(12, 5)
+    assert result.cost is None
+
+
+def test_each_model_is_priced_with_its_own_pair(server):
+    server.reply(chat_reply("hello", usage=USAGE))
+    client = make_client(
+        server, price_in=2.0, price_out=8.0, reasoning_price_in=3.0, reasoning_price_out=12.0
+    )
+    assert client.chat([]).cost == pytest.approx((12 * 2.0 + 5 * 8.0) / 1_000_000)
+    assert client.chat([], model="reasoning").cost == pytest.approx(
+        (12 * 3.0 + 5 * 12.0) / 1_000_000
+    )
+
+
+def test_reasoning_cost_with_explicit_zero_prices_is_zero(server):
+    server.reply(chat_reply("deep", usage=USAGE))
+    result = make_client(server, reasoning_price_in=0.0, reasoning_price_out=0.0).chat(
+        [], model="reasoning"
+    )
+    assert result.cost == 0.0
+
+
+def test_reasoning_cost_is_none_without_usage(server):
+    server.reply(chat_reply("deep"))
+    result = make_client(server, reasoning_price_in=3.0, reasoning_price_out=12.0).chat(
+        [], model="reasoning"
+    )
+    assert result.usage is None
+    assert result.cost is None
+
+
+def test_reasoning_stream_cost_from_reasoning_prices(server):
+    server.stream(sse(delta("deep", finish_reason="stop"), {"choices": [], "usage": USAGE}))
+    stream = make_client(server, reasoning_price_in=3.0, reasoning_price_out=12.0).chat_stream(
+        [], model="reasoning"
+    )
+    assert list(stream) == ["deep"]
+    assert stream.result.model == "big"
+    assert stream.result.cost == pytest.approx((12 * 3.0 + 5 * 12.0) / 1_000_000)
 
 
 @pytest.mark.parametrize(

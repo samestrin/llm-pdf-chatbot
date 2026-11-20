@@ -110,8 +110,24 @@ def deep_model(sub_questions=SUB_QUESTIONS, answer=compare_both, usage=USAGE, st
     return respond
 
 
-def deep(engine, server, question=QUESTION, embedder=None, **body):
-    llm = make_client(server)
+def deep(
+    engine,
+    server,
+    question=QUESTION,
+    embedder=None,
+    price_in=None,
+    price_out=None,
+    reasoning_price_in=None,
+    reasoning_price_out=None,
+    **body,
+):
+    llm = make_client(
+        server,
+        price_in=price_in,
+        price_out=price_out,
+        reasoning_price_in=reasoning_price_in,
+        reasoning_price_out=reasoning_price_out,
+    )
     app = create_app(engine, embedder=embedder or TopicEmbedder(), llm=llm)
     try:
         with TestClient(app) as client:
@@ -202,6 +218,80 @@ def test_steps_come_before_the_claims(engine, server):
 
     kinds = types(events)
     assert max(i for i, k in enumerate(kinds) if k == "step") < kinds.index("claim")
+
+
+# --- Cost ---
+
+# Each call reports USAGE (12 input, 5 output tokens); a deep run makes two calls.
+REASONING_PRICES = {"reasoning_price_in": 3.0, "reasoning_price_out": 12.0}
+CALL_COST = (USAGE["prompt_tokens"] * 3.0 + USAGE["completion_tokens"] * 12.0) / 1_000_000
+
+
+def test_deep_cost_is_the_plan_plus_the_answer(engine, server):
+    two_reports(engine)
+    server.responder = deep_model()
+
+    _, events = deep(engine, server, **REASONING_PRICES)
+
+    assert types(events) == ["step", "step", "claim", "claim", "done"]
+    assert events[-1]["mode"] == "deep"
+    assert events[-1]["cost"] == pytest.approx(2 * CALL_COST)
+
+
+def test_deep_cost_uses_the_reasoning_pair_not_the_fast_one(engine, server):
+    two_reports(engine)
+    server.responder = deep_model()
+
+    _, events = deep(engine, server, price_in=2.0, price_out=8.0, **REASONING_PRICES)
+
+    assert events[-1]["cost"] == pytest.approx(2 * CALL_COST)
+
+
+@pytest.mark.parametrize(
+    "prices",
+    [{}, {"price_in": 2.0, "price_out": 8.0}],
+    ids=["no prices", "only the fast pair"],
+)
+def test_deep_cost_is_null_when_the_reasoning_pair_is_not_set(engine, server, prices):
+    two_reports(engine)
+    server.responder = deep_model()
+
+    _, events = deep(engine, server, **prices)
+
+    assert types(events)[-1] == "done"
+    assert events[-1]["cost"] is None
+
+
+def test_deep_cost_is_zero_only_with_explicit_zero_reasoning_prices(engine, server):
+    two_reports(engine)
+    server.responder = deep_model()
+
+    _, events = deep(engine, server, reasoning_price_in=0.0, reasoning_price_out=0.0)
+
+    assert events[-1]["cost"] == 0.0
+
+
+def test_a_deep_refusal_reports_the_plans_cost_alone(engine, server):
+    add_document(engine, "papers", PAPERS)
+    server.responder = deep_model(sub_questions=["What is the capital of France?"])
+
+    _, events = deep(engine, server, question="What is the capital of France?", **REASONING_PRICES)
+
+    assert types(events) == ["step", "refusal", "done"]
+    assert events[-1]["cost"] == pytest.approx(CALL_COST)
+    assert len(server.requests) == 1, "only the plan was asked for"
+
+
+def test_a_deep_refusal_cost_is_null_without_reasoning_prices(engine, server):
+    add_document(engine, "papers", PAPERS)
+    server.responder = deep_model(sub_questions=["What is the capital of France?"])
+
+    _, events = deep(
+        engine, server, question="What is the capital of France?", price_in=2.0, price_out=8.0
+    )
+
+    assert types(events) == ["step", "refusal", "done"]
+    assert events[-1]["cost"] is None
 
 
 # --- The sub-question cap ---

@@ -131,6 +131,9 @@ class LLMConfig:
     # Prices of the fast model per million tokens; both set or both `None`.
     fast_price_in_per_mtok: float | None = None
     fast_price_out_per_mtok: float | None = None
+    # Prices of the reasoning model per million tokens; both set or both `None`.
+    reasoning_price_in_per_mtok: float | None = None
+    reasoning_price_out_per_mtok: float | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMConfig":
@@ -169,13 +172,17 @@ class LLMConfig:
                 raise LLMConfigError(name, f"{name} must be a price of zero or more, got {raw!r}")
             return value
 
-        price_in = price("LLM_PRICE_FAST_PER_MTOK_IN")
-        price_out = price("LLM_PRICE_FAST_PER_MTOK_OUT")
-        if (price_in is None) != (price_out is None):
-            raise LLMConfigError(
-                "LLM_PRICE_FAST_PER_MTOK_IN and LLM_PRICE_FAST_PER_MTOK_OUT",
-                "LLM_PRICE_FAST_PER_MTOK_IN and LLM_PRICE_FAST_PER_MTOK_OUT must be set together",
-            )
+        def price_pair(in_name: str, out_name: str) -> tuple[float | None, float | None]:
+            price_in, price_out = price(in_name), price(out_name)
+            if (price_in is None) != (price_out is None):
+                names = f"{in_name} and {out_name}"
+                raise LLMConfigError(names, f"{names} must be set together")
+            return price_in, price_out
+
+        fast_in, fast_out = price_pair("LLM_PRICE_FAST_PER_MTOK_IN", "LLM_PRICE_FAST_PER_MTOK_OUT")
+        reasoning_in, reasoning_out = price_pair(
+            "LLM_PRICE_REASONING_PER_MTOK_IN", "LLM_PRICE_REASONING_PER_MTOK_OUT"
+        )
 
         return cls(
             base_url=required("LLM_BASE_URL"),
@@ -184,8 +191,10 @@ class LLMConfig:
             reasoning_model=required("LLM_REASONING_MODEL"),
             embedding_model=required("LLM_EMBEDDING_MODEL"),
             timeout=timeout,
-            fast_price_in_per_mtok=price_in,
-            fast_price_out_per_mtok=price_out,
+            fast_price_in_per_mtok=fast_in,
+            fast_price_out_per_mtok=fast_out,
+            reasoning_price_in_per_mtok=reasoning_in,
+            reasoning_price_out_per_mtok=reasoning_out,
         )
 
 
@@ -379,9 +388,13 @@ class LLMClient:
     ) -> ChatResult:
         usage = _usage(raw_usage)
         cost = None
-        price_in = self.config.fast_price_in_per_mtok
-        price_out = self.config.fast_price_out_per_mtok
-        if model == "fast" and usage and price_in is not None and price_out is not None:
+        if model == "fast":
+            price_in = self.config.fast_price_in_per_mtok
+            price_out = self.config.fast_price_out_per_mtok
+        else:
+            price_in = self.config.reasoning_price_in_per_mtok
+            price_out = self.config.reasoning_price_out_per_mtok
+        if usage and price_in is not None and price_out is not None:
             cost = (usage.input_tokens * price_in + usage.output_tokens * price_out) / 1_000_000
         return ChatResult(
             text=text,
