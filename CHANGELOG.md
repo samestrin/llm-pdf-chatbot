@@ -9,9 +9,12 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Suggested questions for the sample: `frontend/public/samples/questions.json` lists questions the sample PDF answers, shown as chips above the question box when the active collection holds it; a click asks. A backend test asks each one through the chat route and checks it is answered with a citation from the sample (by the eval's fake model).
 - View a document: clicking a document's name opens the PDF in the viewer at its first page, on a phone full screen. The viewer now pages with **Previous page** and **Next page**; a citation still opens at its page with the quote highlighted.
 - `DEMO_EMBEDDING_KEY` and `DEMO_SESSION_MAX_EMBED_CALLS` (default 200 per `DEMO_UPLOAD_TTL_MINUTES` window) for the public demo, and `embedding_model` in `GET /presets`: the model the server embeds with in a demo.
+- Reasoning-model prices: set `LLM_PRICE_REASONING_PER_MTOK_IN` and `LLM_PRICE_REASONING_PER_MTOK_OUT` (both or neither) to price deep-mode planning and answers per million input and output tokens.
+- Evaluation floors in `backend/evals/floors.json`: `--subset` now fails and names each metric below its floor, and `--subset --deep` evaluates every subset question in deep mode against the `deep` floors without writing a results file.
 
 ### Changed
 
+- A deep answer now shows its cost when both reasoning-model prices are set: the plan's cost plus the answer's. It remains `null`, never 0, when either cost is unknown.
 - In a public demo the server embeds every upload and every question itself, with `DEMO_EMBEDDING_KEY` at `DEMO_GATEWAY_URL` on `demo-embedding`; the visitor's key or demo code is used only for the chat model that writes the answer. The read-only sample now answers with any preset, every preset can upload (Synthetic too), and no demo code is needed. A session past its embedding cap is told so plainly ("This session has reached its limit of <n> embedding calls in <minutes> minutes; try again later"). In a demo a collection embedded with another model is refused with 409 ("…; this server embeds with demo-embedding, so it cannot ask about it"); the old "switch back to <preset>" refusal now applies outside a demo only. **Deploying needs `DEMO_EMBEDDING_KEY` set**, or no upload is read and no question answered in the demo.
 
 ### Removed

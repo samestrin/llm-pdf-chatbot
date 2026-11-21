@@ -34,7 +34,7 @@
 | `LLM_FAST_MODEL`, `LLM_REASONING_MODEL`, `LLM_EMBEDDING_MODEL` | Model names the gateway serves to that key. All three are required. |
 | `OCR_URL` | An OCR API the backend can reach, for example `http://<ocr-host>:5000` on the `proxy` network. Empty means no OCR: scanned pages are then read from the PDF's text layer only. |
 
-Optional, as in the README's [Configuration](../../README.md#configuration) table: `LLM_TIMEOUT_SECONDS`, `EMBED_BATCH_SIZE`, `OCR_TIMEOUT_SECONDS`, `MAX_UPLOAD_MB`, `MAX_PDF_PAGES`, `RERANK_URL`, `RERANK_MODEL`, `RERANK_API_KEY`, `RERANK_TIMEOUT_SECONDS`, `REFUSAL_MIN_SIMILARITY`, `REFUSAL_MIN_KEYWORD_COVERAGE`, `CHAT_HISTORY_TURNS`, `DEEP_MAX_SUBQUESTIONS`, `DEEP_MAX_TOKENS`, `DEEP_TIMEOUT_SECONDS`, `LLM_PRICE_FAST_PER_MTOK_IN`, `LLM_PRICE_FAST_PER_MTOK_OUT`. `UPLOAD_DIR` is set by the compose file. `BACKEND_PORT` and `FRONTEND_PORT` do nothing here: nothing is published.
+Optional, as in the README's [Configuration](../../README.md#configuration) table: `LLM_TIMEOUT_SECONDS`, `EMBED_BATCH_SIZE`, `OCR_TIMEOUT_SECONDS`, `MAX_UPLOAD_MB`, `MAX_PDF_PAGES`, `RERANK_URL`, `RERANK_MODEL`, `RERANK_API_KEY`, `RERANK_TIMEOUT_SECONDS`, `REFUSAL_MIN_SIMILARITY`, `REFUSAL_MIN_KEYWORD_COVERAGE`, `CHAT_HISTORY_TURNS`, `DEEP_MAX_SUBQUESTIONS`, `DEEP_MAX_TOKENS`, `DEEP_TIMEOUT_SECONDS`, `LLM_PRICE_FAST_PER_MTOK_IN`, `LLM_PRICE_FAST_PER_MTOK_OUT`, `LLM_PRICE_REASONING_PER_MTOK_IN`, `LLM_PRICE_REASONING_PER_MTOK_OUT`. `UPLOAD_DIR` is set by the compose file. `BACKEND_PORT` and `FRONTEND_PORT` do nothing here: nothing is published.
 
 ## Example: Traefik with forward-auth
 

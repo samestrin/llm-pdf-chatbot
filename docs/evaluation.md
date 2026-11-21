@@ -1,6 +1,6 @@
 # Evaluation
 
-The eval asks the 40 questions in `backend/evals/questions.json` about the five PDFs in `backend/evals/pdfs/` (sources and licences in `backend/evals/SOURCES.md`) through the chat API in fast mode. The latest committed score table is in the README under [Performance](../README.md#performance).
+The eval asks the 40 questions in `backend/evals/questions.json` about the five PDFs in `backend/evals/pdfs/` (sources and licences in `backend/evals/SOURCES.md`) through the chat API in fast mode; the deep subset uses deep mode instead. The latest committed score table is in the README under [Performance](../README.md#performance).
 
 ## Measures
 
@@ -12,19 +12,26 @@ The eval asks the 40 questions in `backend/evals/questions.json` about the five 
 ## Running it
 
 ```bash
-cd backend && uv run python -m evals.run            # full run: the models and OCR_URL from the environment
-cd backend && uv run python -m evals.run --judge    # the same, with the model judging accuracy
-cd backend && uv run python -m evals.run --subset   # what CI runs: no scanned PDF, a fake model
+cd backend && uv run python -m evals.run                    # full run: the models and OCR_URL from the environment
+cd backend && uv run python -m evals.run --judge            # the same, with the model judging accuracy
+cd backend && uv run python -m evals.run --subset           # what CI runs: no scanned PDF, a fake model
+cd backend && uv run python -m evals.run --subset --deep    # the subset in deep mode, with its own floors
 ```
 
-Each run needs `DATABASE_URL` pointing at Postgres with pgvector (see [Backend tests](../README.md#backend-tests)); it creates its tables in a schema of its own and drops it at the end, so the database's own documents are never touched. It prints the score table and writes `backend/evals/results/<date>.json` (today's UTC date; a second run that day replaces it) with every question's result.
+Each run needs `DATABASE_URL` pointing at Postgres with pgvector (see [Backend tests](../README.md#backend-tests)); it creates its tables in a schema of its own and drops it at the end, so the database's own documents are never touched. It prints the score table and, except for `--subset --deep`, writes `backend/evals/results/<date>.json` (today's UTC date; a second run that day replaces it) with every question's result. The deep subset writes no results file.
 
 The full run needs `OCR_URL`: without it the scanned PDF does not ingest and the run stops.
 
-The `--subset` run answers with a fake model that quotes the passage sentence sharing most words with the question, so its scores show the pipeline runs end to end, not how good a real model is; its results file says `"run": "subset"`.
+The `--subset` run answers with a fake model that quotes the passage sentence sharing most words with the question, so its scores show the pipeline runs end to end, not how good a real model is; its results file says `"run": "subset"`. Adding `--deep` makes the fake model answer the planning call too, then asks every subset question in deep mode.
 
 The owner makes the full runs and commits their results files.
 
+## Floors
+
+`backend/evals/floors.json` holds the lowest acceptable `answer_accuracy`, `citation_precision` and `refusal_accuracy`, and the highest acceptable `max_errors`, for the subset run. Its `deep` section holds the same floors for `--subset --deep`.
+
+The floors apply only to `--subset` and the deep subset, never to a full run. After printing the score table and writing any results file, a run with a metric under its floor names each one and exits 1. Raising a floor is an edit to `floors.json` in the PR that earns the higher score.
+
 ## The README table
 
-The table in the README is the newest results file in `backend/evals/results/`, and the backend tests fail when it is not. After committing a results file, run `cd backend && uv run python -m evals.readme --write` (`uv run python -m evals.readme` alone only checks). A local `--subset` run writes a newer results file too, so delete it before running the tests.
+The table in the README is the newest results file in `backend/evals/results/`, and the backend tests fail when it is not. After committing a results file, run `cd backend && uv run python -m evals.readme --write` (`uv run python -m evals.readme` alone only checks). A local `--subset` run writes a newer results file too, so delete it before running the tests; `--subset --deep` writes none.
