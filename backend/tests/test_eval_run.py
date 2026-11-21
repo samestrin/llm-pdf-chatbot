@@ -587,6 +587,31 @@ def test_deep_subset_run_prints_the_deep_table_and_writes_no_results(
     assert not list(tmp_path.iterdir())
 
 
+@pytest.mark.parametrize(
+    ("flags", "mode"),
+    [(["--subset", "--deep"], "deep"), (["--subset"], "fast")],
+    ids=["deep", "fast"],
+)
+def test_the_subset_run_asks_every_question_in_the_mode_the_flags_name(
+    postgres_url, tmp_path, monkeypatch, flags, mode
+):
+    monkeypatch.setenv("DATABASE_URL", postgres_url)
+    monkeypatch.delenv("OCR_URL", raising=False)
+    modes = []
+    real_chat_events = eval_run.chat_events
+
+    def record(*args, **kwargs):
+        modes.append(kwargs.get("mode"))
+        return real_chat_events(*args, **kwargs)
+
+    monkeypatch.setattr(eval_run, "chat_events", record)
+
+    assert main([*flags, "--out", str(tmp_path)]) == 0
+
+    assert modes
+    assert set(modes) == {mode}
+
+
 def test_deep_is_refused_without_the_subset(tmp_path, capsys):
     with pytest.raises(SystemExit) as exit_:
         main(["--deep", "--out", str(tmp_path)])
