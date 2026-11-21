@@ -26,6 +26,8 @@ Everything is an environment variable that `docker compose` reads from your shel
 | `DEEP_TIMEOUT_SECONDS` | 300 | Seconds one deep run may take before it ends in an error. |
 | `LLM_PRICE_FAST_PER_MTOK_IN` | empty (cost `null`) | Fast-model price per million input tokens, for the cost of each answer (see [Model prices](#model-prices)). |
 | `LLM_PRICE_FAST_PER_MTOK_OUT` | empty (cost `null`) | Fast-model price per million output tokens. |
+| `LLM_PRICE_REASONING_PER_MTOK_IN` | empty (cost `null`) | Reasoning-model price per million input tokens, for deep-mode planning and answers (see [Model prices](#model-prices)). |
+| `LLM_PRICE_REASONING_PER_MTOK_OUT` | empty (cost `null`) | Reasoning-model price per million output tokens. |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `postgres`, `postgres`, `chatbot` | Database credentials. Compose builds the backend's `DATABASE_URL` from them. |
 | `BACKEND_PORT`, `FRONTEND_PORT` | 8000, 8080 | Published host ports. |
 
@@ -51,7 +53,7 @@ Reranking is optional and runs on a separate HTTP service; no model is added to 
 
 ## Model prices
 
-To have the cost of a fast-model call worked out, set `LLM_PRICE_FAST_PER_MTOK_IN` and `LLM_PRICE_FAST_PER_MTOK_OUT` (prices per million input and output tokens, both or neither). Without them, or when the endpoint reports no token usage, the cost is `null`, never 0. Set both to `0` for a free local model. Reasoning-model prices cannot be set yet, so a deep answer's cost is always `null`.
+To have model-call costs worked out, set `LLM_PRICE_FAST_PER_MTOK_IN` and `LLM_PRICE_FAST_PER_MTOK_OUT` for the fast model, or `LLM_PRICE_REASONING_PER_MTOK_IN` and `LLM_PRICE_REASONING_PER_MTOK_OUT` for the reasoning model (prices per million input and output tokens, each pair both or neither). Without a model's prices, or when the endpoint reports no token usage, its cost is `null`, never 0. Set both prices in a pair to `0` for a free local model. A deep answer's cost is the plan's cost plus the answer's cost when both reasoning prices are set; if either is unknown, the deep answer's cost is `null`.
 
 ## Settings the backend reads but `docker-compose.yml` does not pass
 
