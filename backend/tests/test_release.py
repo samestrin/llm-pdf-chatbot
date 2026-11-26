@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 WORKFLOW = yaml.safe_load((REPO / ".github/workflows/release.yml").read_text())
 JOBS = WORKFLOW["jobs"]
 # PyYAML reads the bare key `on` as the boolean True.
@@ -25,7 +25,7 @@ def steps_text(job):
     return "\n".join(s.get("run", "") for s in JOBS[job]["steps"])
 
 
-def test_backend_version_is_1_1_0_in_pyproject_and_lock():
+def test_backend_version_is_1_2_0_in_pyproject_and_lock():
     pyproject = tomllib.loads((REPO / "backend/pyproject.toml").read_text())
     assert pyproject["project"]["version"] == VERSION
     lock = tomllib.loads((REPO / "backend/uv.lock").read_text())
@@ -33,7 +33,7 @@ def test_backend_version_is_1_1_0_in_pyproject_and_lock():
     assert own["version"] == VERSION
 
 
-def test_frontend_version_is_1_1_0_in_package_and_lock():
+def test_frontend_version_is_1_2_0_in_package_and_lock():
     package = json.loads((REPO / "frontend/package.json").read_text())
     lock = json.loads((REPO / "frontend/package-lock.json").read_text())
     assert package["version"] == VERSION
@@ -302,3 +302,34 @@ def test_no_1_0_1_fix_is_left_under_unreleased(fix):
 def test_the_1_0_1_release_notes_carry_the_fix(fix, capsys):
     assert changelog_section.main(["1.0.1"]) == 0
     assert fix in capsys.readouterr().out
+
+
+# What #22 and epic 10 changed after the v1.1.0 tag ships in 1.2.0's notes, not under Unreleased.
+CHANGES_IN_1_2_0 = [
+    "no longer shows a Delete button",  # the read-only sample has no Delete (#22)
+    "DEMO_EMBEDDING_KEY",  # the server embeds in a demo (#22)
+    "LLM_PRICE_REASONING_PER_MTOK_IN",  # reasoning-model prices (epic 10)
+    "backend/evals/floors.json",  # evaluation floors (epic 10)
+]
+
+
+def test_changelog_dates_1_2_0_and_keeps_1_1_0():
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    assert re.search(r"^## \[1\.2\.0\] - \d{4}-\d{2}-\d{2}$", changelog, re.MULTILINE)
+    assert re.search(r"^## \[1\.1\.0\] - \d{4}-\d{2}-\d{2}$", changelog, re.MULTILINE)
+    compare = "https://github.com/samestrin/llm-pdf-chatbot/compare"
+    assert f"[1.2.0]: {compare}/v1.1.0...v1.2.0" in changelog
+    assert f"[Unreleased]: {compare}/v1.2.0...HEAD" in changelog
+
+
+@pytest.mark.parametrize("change", CHANGES_IN_1_2_0)
+def test_no_1_2_0_change_is_left_under_unreleased(change):
+    changelog = (REPO / "CHANGELOG.md").read_text()
+    assert "## [Unreleased]" in changelog
+    assert change not in changelog_section.section(changelog, "Unreleased")
+
+
+@pytest.mark.parametrize("change", CHANGES_IN_1_2_0)
+def test_the_1_2_0_release_notes_carry_the_change(change, capsys):
+    assert changelog_section.main(["1.2.0"]) == 0
+    assert change in capsys.readouterr().out
