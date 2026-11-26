@@ -317,8 +317,9 @@ def test_changelog_dates_1_2_0_and_keeps_1_1_0():
     changelog = (REPO / "CHANGELOG.md").read_text()
     assert re.search(r"^## \[1\.2\.0\] - \d{4}-\d{2}-\d{2}$", changelog, re.MULTILINE)
     assert re.search(r"^## \[1\.1\.0\] - \d{4}-\d{2}-\d{2}$", changelog, re.MULTILINE)
-    assert "[1.2.0]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.1.0...v1.2.0" in changelog
-    assert "[Unreleased]: https://github.com/samestrin/llm-pdf-chatbot/compare/v1.2.0...HEAD" in changelog
+    compare = "https://github.com/samestrin/llm-pdf-chatbot/compare"
+    assert f"[1.2.0]: {compare}/v1.1.0...v1.2.0" in changelog
+    assert f"[Unreleased]: {compare}/v1.2.0...HEAD" in changelog
 
 
 @pytest.mark.parametrize("change", CHANGES_IN_1_2_0)
