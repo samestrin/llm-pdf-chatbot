@@ -26,8 +26,11 @@ describe('App', () => {
 
     const skip = screen.getByRole('link', { name: 'Skip to chat' })
     const main = screen.getByRole('main')
-    expect(skip).toHaveAttribute('href', `#${main.id}`)
-    expect(main).toHaveAttribute('tabindex', '-1')
+    // The skip link jumps past the bar and the documents panel to the chat, in main.
+    const target = document.getElementById(skip.getAttribute('href')!.slice(1))!
+    expect(main).toContainElement(target)
+    expect(target).toHaveAttribute('tabindex', '-1')
+    expect(within(target).getByRole('region', { name: 'Chat' })).toBeInTheDocument()
     // The skip link is the first thing a keyboard reaches.
     expect(document.body.querySelector('a, button, input, select, textarea')).toBe(skip)
     // The page title and its tagline open main; the bar holds the app name and the nav.

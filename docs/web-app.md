@@ -15,7 +15,7 @@ Open <http://localhost:8080> (`FRONTEND_PORT`) once the stack is up.
 - Before any document is uploaded, both the panel and the chat say what to do first: upload a PDF, then ask about it.
 - A document still queued or being read shows its progress and a note that it can be asked about once it is ready, and the chat names the documents of the active collection that answers still leave out.
 - A failed load or upload shows the reason with a Retry button; Retry upload sends the same file to the same collection again.
-- The header says nothing about the backend while it is up; when the health check fails it says "Backend is down".
+- The page says nothing about the backend while it is up; when the health check fails it says "Backend is down" under the page title.
 
 ## Asking
 
@@ -52,6 +52,6 @@ The page fits 360 px phones to desktops without sideways scrolling: on a desktop
 
 ## Keyboard and screen readers
 
-The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a header, a documents sidebar (`aside`) and the chat in `main`. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
+The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a sticky header bar (the logo and name `PDF Chat`, a `Main` nav with `Chat` and `API` from 768 px up, and the theme button), then `main` with the page title, the documents sidebar (`aside`) and the chat. The content is at most 76rem (1216 px) wide. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
 
 `frontend/e2e/a11y.spec.ts` runs axe over the empty, loaded-chat and viewer-open screens in both themes and fails on any serious or critical violation. It also runs a keyboard-only upload, ask, open and close.

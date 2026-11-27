@@ -100,83 +100,104 @@ export default function App() {
   const suggestions = suggestionsFor(collections?.find((c) => c.name === activeName))
 
   return (
-    <div className="app">
-      <a className="skip-link" href="#main">
+    <div className="app-shell">
+      <a className="skip-link" href="#chat">
         Skip to chat
       </a>
-      <header className="app-bar">
-        <h1 className="app-title">
-          <LogoMark />
-          LLM PDF Chatbot
-        </h1>
-        {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
-        <div className="backend-status">
-          <p role="status">{down ? 'Backend is down' : ''}</p>
+      <header className="app-header">
+        <div className="app-bar">
+          <a className="app-title" href="/">
+            <LogoMark />
+            PDF Chat
+          </a>
+          <nav className="app-nav" aria-label="Main">
+            <a href="/" aria-current="page">
+              Chat
+            </a>
+            <a href="/api/docs">API</a>
+          </nav>
+          <div className="app-bar-actions">
+            {demo && (
+              <button
+                type="button"
+                className="secondary small key-toggle"
+                aria-expanded={panelOpen}
+                onClick={() => setPanelOpen((open) => !open)}
+              >
+                {creds ? `Model key: ${preset?.label ?? creds.preset}` : 'Add a key or demo code'}
+              </button>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
-        {demo && (
-          <button
-            type="button"
-            className="secondary small key-toggle"
-            aria-expanded={panelOpen}
-            onClick={() => setPanelOpen((open) => !open)}
-          >
-            {creds ? `Model key: ${preset?.label ?? creds.preset}` : 'Add a key or demo code'}
-          </button>
-        )}
-        <ThemeToggle />
       </header>
-      {demo && panelOpen && presetList && (
-        <KeyPanel
-          presets={presetList.presets}
-          embeddingModel={presetList.embedding_model ?? null}
-          stored={creds}
-          onSave={onSaveKey}
-          onClear={onClearKey}
-          onClose={() => setPanelOpen(false)}
-        />
-      )}
-      <div className="app-layout">
-        <DocumentsPanel
-          active={active}
-          onActiveChange={setActive}
-          onCollections={onCollections}
-          onLoadError={onLoadError}
-          onView={(doc, from) =>
-            openViewer({ document: { id: doc.id, filename: doc.filename }, page: 1 }, from)
-          }
-          demo={
-            demo && presetList
-              ? {
-                  ttlMinutes: presetList.upload_ttl_minutes,
-                  credentials,
-                  onMissing: openPanel,
+      <main id="main" className="app">
+        <div className="app-content">
+          <div className="app-heading">
+            <h1>LLM PDF Chatbot</h1>
+            <p className="tagline">
+              Chat with your own PDFs and get answers you can check: every answer cites the quote
+              and page it came from.
+            </p>
+          </div>
+          {demo && panelOpen && presetList && (
+            <KeyPanel
+              presets={presetList.presets}
+              embeddingModel={presetList.embedding_model ?? null}
+              stored={creds}
+              onSave={onSaveKey}
+              onClear={onClearKey}
+              onClose={() => setPanelOpen(false)}
+            />
+          )}
+          {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
+          <p role="status" className="backend-status">
+            {down ? 'Backend is down' : ''}
+          </p>
+          <div className="app-layout">
+            <DocumentsPanel
+              active={active}
+              onActiveChange={setActive}
+              onCollections={onCollections}
+              onLoadError={onLoadError}
+              onView={(doc, from) =>
+                openViewer({ document: { id: doc.id, filename: doc.filename }, page: 1 }, from)
+              }
+              demo={
+                demo && presetList
+                  ? {
+                      ttlMinutes: presetList.upload_ttl_minutes,
+                      credentials,
+                      onMissing: openPanel,
+                    }
+                  : undefined
+              }
+            />
+            <div id="chat" className="chat-column" tabIndex={-1}>
+              <Chat
+                collection={activeName}
+                loading={collections === null && !loadFailed}
+                empty={collections !== null && collections.every((c) => c.documents.length === 0)}
+                ingesting={ingesting}
+                modelAccess={demo ? { credentials, onMissing: openPanel } : undefined}
+                suggestions={suggestions}
+                onOpen={openViewer}
+                viewer={
+                  viewing && (
+                    <Suspense fallback={<p>Opening the PDF viewer…</p>}>
+                      <PdfViewer
+                        key={`${viewing.document.id}:${viewing.page}:${viewing.quote ?? ''}`}
+                        citation={viewing}
+                        onClose={closeViewer}
+                      />
+                    </Suspense>
+                  )
                 }
-              : undefined
-          }
-        />
-        <main id="main" tabIndex={-1}>
-          <Chat
-            collection={activeName}
-            loading={collections === null && !loadFailed}
-            empty={collections !== null && collections.every((c) => c.documents.length === 0)}
-            ingesting={ingesting}
-            modelAccess={demo ? { credentials, onMissing: openPanel } : undefined}
-            suggestions={suggestions}
-            onOpen={openViewer}
-            viewer={
-              viewing && (
-                <Suspense fallback={<p>Opening the PDF viewer…</p>}>
-                  <PdfViewer
-                    key={`${viewing.document.id}:${viewing.page}:${viewing.quote ?? ''}`}
-                    citation={viewing}
-                    onClose={closeViewer}
-                  />
-                </Suspense>
-              )
-            }
-          />
-        </main>
-      </div>
+              />
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   )
 }

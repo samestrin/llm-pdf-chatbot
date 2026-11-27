@@ -4,6 +4,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The page uses the shared demo shell's header and width: a sticky 56 px header bar across the page with the logo and the name **PDF Chat** (a link home), a `Main` nav with **Chat** and **API** (`/api/docs`) from 768 px up, and the theme button at the right. The title "LLM PDF Chatbot" and a one-line tagline now open the page under the bar, with "Backend is down" below them when the health check fails. The content is 76rem (1216 px) wide, with its 1rem side gutter outside that width (it was 1184 px).
+
 ### Fixed
 
 - The demo key panel remembers one key per provider: switching the provider no longer forgets the demo code (or another provider's key). The browser now stores `{preset, keys, remember}` — each provider's key under its own id, in local storage with "remember on this device" and session storage without — and switching back to a provider shows its saved key again. A key is still sent only with its own preset's headers (`X-Demo-Code` for the demo, `X-Model-Key` otherwise), Clear still wipes every stored key from both stores, and a key saved by an older version is kept under its old provider on first load.
