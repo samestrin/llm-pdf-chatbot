@@ -13,7 +13,7 @@ export default function ThemeToggle() {
 
   return (
     // The label names what a click does, so the way back is always visible.
-    <button type="button" className="theme-toggle" onClick={toggle}>
+    <button type="button" className="secondary theme-toggle" onClick={toggle}>
       {theme === 'dark' ? 'Light theme' : 'Dark theme'}
     </button>
   )
