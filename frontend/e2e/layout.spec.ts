@@ -126,6 +126,24 @@ test('the header bar stays at the top while the page scrolls', async ({ page, ap
   await expect(page.getByRole('banner').getByRole('link', { name: 'PDF Chat' })).toBeInViewport()
 })
 
+test('the focused skip link is painted above the sticky header bar', async ({ page, api }) => {
+  withContent(api)
+  await page.setViewportSize({ width: 1280, height: HEIGHT })
+  await page.goto('/')
+  await expect(page.getByRole('listitem', { name: LONG_NAME })).toBeVisible()
+  await page.keyboard.press('Tab')
+  const skip = page.getByRole('link', { name: 'Skip to chat' })
+  await expect(skip).toBeFocused()
+
+  // The element drawn at the link's centre is the link, not the bar over it.
+  const onTop = await skip.evaluate((link) => {
+    const r = link.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return hit !== null && link.contains(hit)
+  })
+  expect(onTop).toBe(true)
+})
+
 test('below 48rem the nav slot is hidden and the bar does not scroll sideways', async ({
   page,
   api,
