@@ -67,3 +67,16 @@ def test_the_backend_image_ships_the_repo_license(compose_file):
     assert re.search(r"^COPY\s+LICENSE\s+\./LICENSE\s*$", text, re.MULTILINE), (
         f"{dockerfile}: no `COPY LICENSE ./LICENSE`"
     )
+
+
+def test_the_release_workflow_builds_the_backend_from_the_repo_root():
+    # The release images are built with plain `docker build`, not compose: the command
+    # must use the same context and Dockerfile as the compose files, or the released
+    # image would not ship the LICENSE (or build at all).
+    text = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    lines = [ln.strip() for ln in text.splitlines() if "docker build" in ln and "backend" in ln]
+    assert lines, "release.yml has no backend docker build"
+    for line in lines:
+        assert "-f backend/Dockerfile" in line and line.endswith(" ."), (
+            f"release.yml builds the backend outside the repo-root context: {line}"
+        )
