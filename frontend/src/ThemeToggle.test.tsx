@@ -26,6 +26,12 @@ describe('ThemeToggle', () => {
     expect(screen.getByRole('button', { name: 'Dark theme' })).not.toHaveAttribute('aria-pressed')
   })
 
+  it('is a secondary button, so it shares the shell\'s secondary look', () => {
+    systemPrefers(false)
+    render(<ThemeToggle />)
+    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveClass('secondary')
+  })
+
   it('saves the choice and sets it on the page', () => {
     systemPrefers(false)
     render(<ThemeToggle />)

@@ -435,17 +435,13 @@ label {
   fill: var(--color-text);
 }
 
+/* The shell size, explicit so it does not ride on inherited padding and
+   line-height: 2.625rem = 42 px tall, 16 px text. The look is button.secondary. */
 .theme-toggle {
   flex: none;
   white-space: nowrap;
-  background: var(--color-surface);
-  color: var(--color-text);
-  border-color: var(--color-border-strong);
-}
-
-.theme-toggle:hover:not(:disabled) {
-  background: var(--color-surface-sunken);
-  border-color: var(--color-border-strong);
+  height: 2.625rem;
+  font-size: var(--text-base);
 }
 
 /* Public demo: the key panel, its notice and the notes about keys and models */

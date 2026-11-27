@@ -24,6 +24,48 @@ for (const scheme of ['light', 'dark'] as const) {
   })
 }
 
+test('the toggle is a 42 px secondary button with 16 px text at the right of the bar', async ({
+  page,
+  api,
+}) => {
+  void api
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/')
+  const toggle = page.locator('.theme-toggle')
+  await expect(toggle).toBeVisible()
+
+  const box = (await toggle.boundingBox())!
+  expect(box.height).toBe(42)
+  const look = await toggle.evaluate((el) => {
+    const s = getComputedStyle(el)
+    return { fontSize: s.fontSize, background: s.backgroundColor, color: s.color }
+  })
+  expect(look.fontSize).toBe('16px')
+  // Secondary: outlined on the surface, not the solid primary fill.
+  const shell = await page.evaluate(() => ({
+    surface: getComputedStyle(document.querySelector('.app-header')!).backgroundColor,
+    text: getComputedStyle(document.body).color,
+  }))
+  expect(look.background).toBe(shell.surface)
+  expect(look.color).toBe(shell.text)
+
+  // At the right of the bar: its right edge sits one bar gutter (1rem) from the row's.
+  const bar = (await page.locator('header .app-bar').boundingBox())!
+  expect(Math.abs(bar.x + bar.width - (box.x + box.width) - 16)).toBeLessThanOrEqual(1)
+
+  // Sizing did not break the job: a click still flips data-theme, both ways.
+  await toggle.click()
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+  await toggle.click()
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+
+  // The size holds on a phone, where the bar wraps.
+  await page.setViewportSize({ width: 360, height: 800 })
+  expect((await toggle.boundingBox())!.height).toBe(42)
+  expect(await toggle.evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
+})
+
 test('the colours follow the system scheme', async ({ page, api }) => {
   void api
   await page.emulateMedia({ colorScheme: 'light' })
