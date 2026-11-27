@@ -127,7 +127,8 @@ body {
   position: absolute;
   left: var(--space-2);
   top: var(--space-2);
-  z-index: 20;
+  /* Above the sticky header bar (40), below the phone PDF viewer (50). */
+  z-index: 45;
   transform: translateY(-200%);
   background: var(--color-surface);
   color: var(--color-accent);
