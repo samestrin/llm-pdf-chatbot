@@ -52,6 +52,7 @@ async function openSample(page: Page, api: ApiMock) {
   await page.addInitScript(() =>
     sessionStorage.setItem(
       'pdfchat.model',
+      // The old single-key shape on purpose: the page migrates it on load.
       JSON.stringify({ preset: 'synthetic', secret: 'sk-e2e-synthetic', remember: false }),
     ),
   )

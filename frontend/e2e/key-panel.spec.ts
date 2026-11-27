@@ -158,7 +158,7 @@ test('the key travels only in request headers, never in the URL or body', async 
   expect(body).not.toContain(KEY)
   // Session storage by default; local storage stays empty.
   const stores = await stored(page)
-  expect(JSON.parse(stores.session!)).toMatchObject({ preset: 'openai', secret: KEY })
+  expect(JSON.parse(stores.session!)).toMatchObject({ preset: 'openai', keys: { openai: KEY } })
   expect(stores.local).toBeNull()
 })
 
@@ -188,11 +188,66 @@ test('remember keeps the key on the device; a reload uses it without the panel',
   await saveKey(page, 'OpenAI', KEY, true)
   const stores = await stored(page)
   expect(stores.session).toBeNull()
-  expect(JSON.parse(stores.local!)).toMatchObject({ secret: KEY, remember: true })
+  expect(JSON.parse(stores.local!)).toMatchObject({ keys: { openai: KEY }, remember: true })
   await page.reload()
   await expect(page.getByRole('button', { name: 'Model key: OpenAI' })).toBeVisible()
   await ask(page, 'after reload')
   await expect(page.getByRole('article', { name: 'Answer' })).toBeVisible()
+})
+
+for (const remember of [true, false]) {
+  test(`switching provider and back restores the demo code (remember ${remember ? 'on' : 'off'})`, async ({
+    page,
+    api,
+  }) => {
+    let headers: Record<string, string> = {}
+    api.on('POST', '/api/collections/default/chat', (route) => {
+      headers = route.request().headers()
+      return answer(route)
+    })
+    await page.goto('/')
+    await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
+    await saveKey(page, 'Demo code', 'demo-code-123', remember)
+    // Switch to OpenAI: its field is empty, and saving its key keeps the demo code.
+    await page.getByRole('button', { name: 'Model key: Demo code' }).click()
+    await page.getByLabel('Provider').selectOption({ label: 'OpenAI' })
+    await expect(page.getByLabel('API key')).toHaveValue('')
+    await saveKey(page, 'OpenAI', KEY)
+    // Switch back to the demo: the code is restored, not forgotten.
+    await page.getByRole('button', { name: 'Model key: OpenAI' }).click()
+    await page.getByLabel('Provider').selectOption({ label: 'Demo code' })
+    await expect(page.getByLabel('Demo code')).toHaveValue('demo-code-123')
+    await page.getByRole('button', { name: 'Save' }).click()
+    const stores = await stored(page)
+    const keep = remember ? stores.local : stores.session
+    const drop = remember ? stores.session : stores.local
+    expect(JSON.parse(keep!)).toMatchObject({
+      preset: 'demo',
+      keys: { demo: 'demo-code-123', openai: KEY },
+      remember,
+    })
+    expect(drop).toBeNull()
+    // The restored code travels only as X-Demo-Code, never as another preset's key.
+    await ask(page, 'back on demo')
+    await expect(page.getByRole('article', { name: 'Answer' })).toBeVisible()
+    expect(headers['x-model-preset']).toBe('demo')
+    expect(headers['x-demo-code']).toBe('demo-code-123')
+    expect(headers['x-model-key']).toBeUndefined()
+  })
+}
+
+test('clear wipes every stored key, not just the active preset’s', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
+  await saveKey(page, 'Demo code', 'demo-code-123', true)
+  await page.getByRole('button', { name: 'Model key: Demo code' }).click()
+  await saveKey(page, 'OpenAI', KEY)
+  await page.getByRole('button', { name: 'Model key: OpenAI' }).click()
+  await page.getByRole('button', { name: 'Clear' }).click()
+  expect(await stored(page)).toEqual({ session: null, local: null })
+  // No preset shows a key any more.
+  await page.getByLabel('Provider').selectOption({ label: 'Demo code' })
+  await expect(page.getByLabel('Demo code')).toHaveValue('')
 })
 
 test('clear wipes the key from both stores, and the next ask opens the panel again', async ({

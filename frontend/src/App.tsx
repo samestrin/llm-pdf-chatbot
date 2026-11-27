@@ -13,10 +13,11 @@ import {
   type PresetList,
 } from './api'
 import {
+  activeCredentials,
   clearCredentials,
   loadCredentials,
   saveCredentials,
-  type ModelCredentials,
+  type PresetKeys,
   type StoredCredentials,
 } from './modelAccess'
 import LogoMark from './LogoMark'
@@ -59,6 +60,8 @@ export default function App() {
   }, [])
   const demo = presetList?.public_demo === true
   const preset = demo ? (presetList?.presets.find((p) => p.id === creds?.preset) ?? null) : null
+  // Only the active preset's own key goes to a model call, never another preset's.
+  const credentials = activeCredentials(creds)
   const openPanel = useCallback(() => setPanelOpen(true), [])
   const onCollections = useCallback(
     (loaded: Collection[]) => {
@@ -75,7 +78,7 @@ export default function App() {
     return () => controller.abort()
   }, [])
 
-  function onSaveKey(credentials: ModelCredentials, remember: boolean) {
+  function onSaveKey(credentials: PresetKeys, remember: boolean) {
     saveCredentials(credentials, remember)
     setCreds({ ...credentials, remember })
     setPanelOpen(false)
@@ -145,7 +148,7 @@ export default function App() {
             demo && presetList
               ? {
                   ttlMinutes: presetList.upload_ttl_minutes,
-                  credentials: creds,
+                  credentials,
                   onMissing: openPanel,
                 }
               : undefined
@@ -157,7 +160,7 @@ export default function App() {
             loading={collections === null && !loadFailed}
             empty={collections !== null && collections.every((c) => c.documents.length === 0)}
             ingesting={ingesting}
-            modelAccess={demo ? { credentials: creds, onMissing: openPanel } : undefined}
+            modelAccess={demo ? { credentials, onMissing: openPanel } : undefined}
             suggestions={suggestions}
             onOpen={openViewer}
             viewer={

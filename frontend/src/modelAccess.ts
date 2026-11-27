@@ -1,7 +1,8 @@
-// The visitor's model credentials in the browser: a preset id and their key or demo
-// code. Session storage by default; local storage only when they tick "remember on
-// this device". The secret goes to the backend only as a request header (modelHeaders)
-// and is never put in a URL, a body or a log line.
+// The visitor's model credentials in the browser: a preset id and one key or demo
+// code per preset, so switching provider never forgets another provider's key.
+// Session storage by default; local storage only when they tick "remember on
+// this device". A secret goes to the backend only as a request header (modelHeaders)
+// with its own preset, and is never put in a URL, a body or a log line.
 
 export interface ModelCredentials {
   /** A preset id from `GET /presets`; `demo` means the secret is a demo code. */
@@ -9,7 +10,13 @@ export interface ModelCredentials {
   secret: string
 }
 
-export interface StoredCredentials extends ModelCredentials {
+/** The last chosen preset and each preset's own key or demo code. */
+export interface PresetKeys {
+  preset: string
+  keys: Record<string, string>
+}
+
+export interface StoredCredentials extends PresetKeys {
   remember: boolean
 }
 
@@ -19,14 +26,19 @@ function parse(raw: string | null): StoredCredentials | null {
   if (raw === null) return null
   try {
     const value = JSON.parse(raw)
-    if (
-      value &&
-      typeof value.preset === 'string' &&
-      value.preset &&
-      typeof value.secret === 'string' &&
-      value.secret
-    ) {
-      return { preset: value.preset, secret: value.secret, remember: value.remember === true }
+    if (value && typeof value.preset === 'string' && value.preset) {
+      const remember = value.remember === true
+      // The old single-key shape: keep its key under its old preset.
+      if (typeof value.secret === 'string' && value.secret) {
+        return { preset: value.preset, keys: { [value.preset]: value.secret }, remember }
+      }
+      if (value.keys && typeof value.keys === 'object' && !Array.isArray(value.keys)) {
+        const keys: Record<string, string> = {}
+        for (const [id, key] of Object.entries(value.keys)) {
+          if (id && typeof key === 'string' && key) keys[id] = key
+        }
+        if (Object.keys(keys).length > 0) return { preset: value.preset, keys, remember }
+      }
     }
   } catch {
     // A malformed stored value is no credentials.
@@ -45,7 +57,7 @@ export function loadCredentials(): StoredCredentials | null {
 }
 
 /** Save into one store only: local with `remember`, session without. */
-export function saveCredentials(credentials: ModelCredentials, remember: boolean): void {
+export function saveCredentials(credentials: PresetKeys, remember: boolean): void {
   const value: StoredCredentials = { ...credentials, remember }
   try {
     const keep = remember ? localStorage : sessionStorage
@@ -57,7 +69,7 @@ export function saveCredentials(credentials: ModelCredentials, remember: boolean
   }
 }
 
-/** Wipe the credentials from both stores. */
+/** Wipe every stored key, the preset and remember from both stores. */
 export function clearCredentials(): void {
   try {
     sessionStorage.removeItem(STORAGE_KEY)
@@ -65,6 +77,12 @@ export function clearCredentials(): void {
   } catch {
     // Nothing was stored if storage is blocked.
   }
+}
+
+/** The active preset's own key for a model call; `null` when it has none. */
+export function activeCredentials(stored: StoredCredentials | null): ModelCredentials | null {
+  const secret = stored?.keys[stored.preset]
+  return stored && secret ? { preset: stored.preset, secret } : null
 }
 
 /** The request headers for a model call: the secret is a header value, nothing else. */

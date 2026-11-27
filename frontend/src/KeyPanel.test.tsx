@@ -26,7 +26,13 @@ const presets: Preset[] = [
   },
 ]
 
-function setup(stored = null as null | { preset: string; secret: string; remember: boolean }) {
+function setup(
+  stored = null as null | {
+    preset: string
+    keys: Record<string, string>
+    remember: boolean
+  },
+) {
   const onSave = vi.fn()
   const onClear = vi.fn()
   const onClose = vi.fn()
@@ -66,7 +72,47 @@ describe('KeyPanel', () => {
     fireEvent.change(screen.getByLabelText('API key'), { target: { value: '  sk-k  ' } })
     fireEvent.click(screen.getByLabelText('Remember on this device'))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onSave).toHaveBeenCalledWith({ preset: 'openai', secret: 'sk-k' }, true)
+    expect(onSave).toHaveBeenCalledWith({ preset: 'openai', keys: { openai: 'sk-k' } }, true)
+  })
+
+  it('switching preset shows that preset’s saved key, and switching back restores it', () => {
+    setup({
+      preset: 'demo',
+      keys: { demo: 'demo-code', openai: 'sk-k' },
+      remember: true,
+    })
+    expect(screen.getByLabelText('Demo code')).toHaveValue('demo-code')
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    expect(screen.getByLabelText('API key')).toHaveValue('sk-k')
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'demo' } })
+    expect(screen.getByLabelText('Demo code')).toHaveValue('demo-code')
+  })
+
+  it('switching to a preset with no saved key shows an empty field', () => {
+    setup({ preset: 'demo', keys: { demo: 'demo-code' }, remember: false })
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    expect(screen.getByLabelText('API key')).toHaveValue('')
+  })
+
+  it('keeps a typed but unsaved code when switching away and back', () => {
+    setup()
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'demo' } })
+    fireEvent.change(screen.getByLabelText('Demo code'), { target: { value: 'demo-code' } })
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    expect(screen.getByLabelText('API key')).toHaveValue('')
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'demo' } })
+    expect(screen.getByLabelText('Demo code')).toHaveValue('demo-code')
+  })
+
+  it('saving one preset’s key keeps every other preset’s key', () => {
+    const { onSave } = setup({ preset: 'demo', keys: { demo: 'demo-code' }, remember: true })
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: ' sk-k ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onSave).toHaveBeenCalledWith(
+      { preset: 'openai', keys: { demo: 'demo-code', openai: 'sk-k' } },
+      true,
+    )
   })
 
   it('will not save an empty secret', () => {
@@ -78,7 +124,7 @@ describe('KeyPanel', () => {
   })
 
   it('starts from the stored credentials, with the key not shown as plain text', () => {
-    setup({ preset: 'demo', secret: 'demo-code', remember: true })
+    setup({ preset: 'demo', keys: { demo: 'demo-code' }, remember: true })
     expect(screen.getByLabelText('Provider')).toHaveValue('demo')
     const field = screen.getByLabelText('Demo code')
     expect(field).toHaveValue('demo-code')
@@ -87,11 +133,30 @@ describe('KeyPanel', () => {
   })
 
   it('clear empties the field and reports the clear', () => {
-    const { onClear } = setup({ preset: 'openai', secret: 'sk-k', remember: true })
+    const { onClear } = setup({
+      preset: 'openai',
+      keys: { openai: 'sk-k', demo: 'demo-code' },
+      remember: true,
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(onClear).toHaveBeenCalledTimes(1)
     expect(screen.getByLabelText('API key')).toHaveValue('')
     expect(screen.getByLabelText('Remember on this device')).not.toBeChecked()
+    // Every preset's key is gone, not just the active one's.
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'demo' } })
+    expect(screen.getByLabelText('Demo code')).toHaveValue('')
+  })
+
+  it('emptying a preset’s field and saving another preset forgets the emptied key', () => {
+    const { onSave } = setup({
+      preset: 'demo',
+      keys: { demo: 'demo-code', openai: 'sk-k' },
+      remember: false,
+    })
+    fireEvent.change(screen.getByLabelText('Demo code'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onSave).toHaveBeenCalledWith({ preset: 'openai', keys: { openai: 'sk-k' } }, false)
   })
 
   it('never says a preset cannot take uploads: the server embeds for every preset', () => {
