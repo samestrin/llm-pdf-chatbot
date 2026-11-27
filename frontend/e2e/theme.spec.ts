@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, json, test } from './fixtures'
 
 const backgroundOf = (page: import('@playwright/test').Page) =>
   page.evaluate(() => getComputedStyle(document.body).backgroundColor)
@@ -139,19 +139,30 @@ test('a saved light choice beats a dark system scheme after a reload', async ({ 
   await expect(toggle).toHaveText('Dark theme')
 })
 
+// The primary and disabled fills of theme.css, as the browser computes them.
+const PRIMARY_FILL = { light: 'rgb(36, 81, 204)', dark: 'rgb(58, 102, 214)' } as const
+const DISABLED_FILL = { light: 'rgb(228, 231, 236)', dark: 'rgb(42, 47, 56)' } as const
+
 for (const scheme of ['light', 'dark'] as const) {
   test(`in the ${scheme} scheme an enabled Ask looks enabled and a disabled one looks different`, async ({
     page,
     api,
   }) => {
     void api
+    await page.setViewportSize({ width: 1280, height: 800 })
     await page.emulateMedia({ colorScheme: scheme })
     await page.goto('/')
     const ask = page.getByRole('button', { name: 'Ask' })
     const look = () =>
       ask.evaluate((el) => {
         const s = getComputedStyle(el)
-        return { background: s.backgroundColor, color: s.color, opacity: s.opacity, cursor: s.cursor }
+        return {
+          background: s.backgroundColor,
+          color: s.color,
+          opacity: s.opacity,
+          cursor: s.cursor,
+          height: s.height,
+        }
       })
 
     await expect(ask).toBeDisabled()
@@ -169,5 +180,20 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(enabled.cursor).toBe('pointer')
     // The enabled fill is the solid primary: white text on it.
     expect(enabled.color).toBe('rgb(255, 255, 255)')
+    // The shell sizes: a primary is 42 px tall, enabled or disabled, and the
+    // fills are the --color-primary / --color-disabled tokens of this scheme.
+    expect(enabled.height).toBe('42px')
+    expect(disabled.height).toBe('42px')
+    expect(enabled.background).toBe(PRIMARY_FILL[scheme])
+    expect(disabled.background).toBe(DISABLED_FILL[scheme])
   })
 }
+
+test('a small button is 32 px tall on a desktop', async ({ page, api }) => {
+  api.on('GET', '/api/collections', json([{ id: 1, name: 'default', documents: [] }]))
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/')
+  const small = page.getByRole('button', { name: 'Remove empty collection' })
+  await expect(small).toBeVisible()
+  expect(await small.evaluate((el) => getComputedStyle(el).height)).toBe('32px')
+})
