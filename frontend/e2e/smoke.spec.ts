@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { expect, json, pdf, test } from './fixtures'
 
 test('loads the app and checks the backend health at same-origin /api', async ({
@@ -53,6 +55,17 @@ test('the dev server proxies /api to the backend with the prefix stripped', asyn
 
   expect(res.status()).toBe(200)
   expect(await res.json()).toEqual({ status: 'ok', server: 'fake-backend' })
+})
+
+test('the dev server proxies /LICENSE to the backend unchanged', async ({ request }) => {
+  // The footer's licence link is a plain same-origin /LICENSE: the Vite proxy must
+  // forward it to the backend's /LICENSE with no rewrite (nginx does the same,
+  // scripts/compose-smoke.sh).
+  const res = await request.get('/LICENSE')
+
+  expect(res.status()).toBe(200)
+  expect(res.headers()['content-type']).toContain('text/plain')
+  expect(await res.text()).toBe(readFileSync(new URL('../../LICENSE', import.meta.url), 'utf8'))
 })
 
 test('the dev server proxy tells the backend it is mounted at /api', async ({ request }) => {

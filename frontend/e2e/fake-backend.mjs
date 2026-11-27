@@ -11,6 +11,7 @@
 //
 // `GET /_fake/request` answers with the path it was asked for and the
 // X-Forwarded-Prefix header it received, so a test can see what the proxy sends.
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 
 const port = Number(process.argv[2] ?? 5198)
@@ -48,6 +49,11 @@ createServer(async (req, res) => {
   let m
   if (req.method === 'GET' && pathname === '/health') {
     return send(res, 200, { status: 'ok', server: 'fake-backend' })
+  }
+  if (req.method === 'GET' && pathname === '/LICENSE') {
+    // The repo LICENSE as plain text, as the backend serves it (backend/app/main.py).
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+    return res.end(readFileSync(new URL('../../LICENSE', import.meta.url)))
   }
   if (req.method === 'GET' && pathname === '/_fake/request') {
     // What the proxy forwarded: the path it sent and the prefix header it added.
