@@ -19,12 +19,6 @@ export default defineConfig(({ mode }) => {
           // As nginx does: the spec then names /api as its server for /api/docs.
           headers: { 'X-Forwarded-Prefix': '/api' },
         },
-        // The footer's licence link: the backend serves the repo LICENSE at
-        // /LICENSE, forwarded unchanged as nginx does (frontend/nginx.conf).
-        '/LICENSE': {
-          target: API_PROXY_TARGET,
-          changeOrigin: true,
-        },
       },
     },
     test: {

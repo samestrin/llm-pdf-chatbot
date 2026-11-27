@@ -1,16 +1,12 @@
 # HTTP API
 
-The backend is a FastAPI app on port 8000 (`BACKEND_PORT`). Its interactive reference is at [`/api/docs`](http://localhost:8080/api/docs) on the running app (the frontend's address, `FRONTEND_PORT`, default 8080). The browser reaches the backend only at same-origin `/api/...` (and `/LICENSE`, the licence file below): the frontend's nginx strips `/api` and forwards to the backend, so no CORS is needed.
+The backend is a FastAPI app on port 8000 (`BACKEND_PORT`). Its interactive reference is at [`/api/docs`](http://localhost:8080/api/docs) on the running app (the frontend's address, `FRONTEND_PORT`, default 8080). The browser reaches the backend only at same-origin `/api/...`: the frontend's nginx strips `/api` and forwards to the backend, so no CORS is needed.
 
 The app serves the OpenAPI spec at `/api/openapi.json`; the same spec is committed as [`docs/openapi.json`](openapi.json). After changing an endpoint, regenerate it with `cd backend && uv run python ../scripts/export_openapi.py`; a backend test fails when the committed file is stale.
 
 Through the frontend, nginx tells the backend its `/api` prefix (`X-Forwarded-Prefix`), so the spec served at `/api/openapi.json` names `/api` as its server and the reference's "Test Request" and code samples call `/api/...`. Served directly on port 8000, the spec names no server and they call the backend's own origin.
 
 ## Behaviour the spec does not carry
-
-### The licence file
-
-`GET /LICENSE` serves the repo's MIT `LICENSE` as `text/plain`: a `200` with the file itself, no credentials and no redirect. It is a file, not an endpoint, so it is not in the spec. The frontend's nginx and the Vite dev proxy forward same-origin `/LICENSE` to the backend unchanged, and the image ships the file (`backend/Dockerfile`).
 
 ### Model credentials in a public demo
 

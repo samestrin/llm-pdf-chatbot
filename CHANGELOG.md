@@ -4,10 +4,6 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
-### Added
-
-- The repo's MIT `LICENSE` now ships in the backend image and is served at `GET /LICENSE` (`200`, `text/plain`, no credentials, no redirect). The frontend's nginx and the Vite dev proxy forward same-origin `/LICENSE` to the backend unchanged.
-
 ### Fixed
 
 - The demo key panel remembers one key per provider: switching the provider no longer forgets the demo code (or another provider's key). The browser now stores `{preset, keys, remember}` — each provider's key under its own id, in local storage with "remember on this device" and session storage without — and switching back to a provider shows its saved key again. A key is still sent only with its own preset's headers (`X-Demo-Code` for the demo, `X-Model-Key` otherwise), Clear still wipes every stored key from both stores, and a key saved by an older version is kept under its old provider on first load.
