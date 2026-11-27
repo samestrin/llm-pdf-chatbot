@@ -147,6 +147,18 @@ describe('KeyPanel', () => {
     expect(screen.getByLabelText('Demo code')).toHaveValue('')
   })
 
+  it('emptying a preset’s field and saving another preset forgets the emptied key', () => {
+    const { onSave } = setup({
+      preset: 'demo',
+      keys: { demo: 'demo-code', openai: 'sk-k' },
+      remember: false,
+    })
+    fireEvent.change(screen.getByLabelText('Demo code'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onSave).toHaveBeenCalledWith({ preset: 'openai', keys: { openai: 'sk-k' } }, false)
+  })
+
   it('never says a preset cannot take uploads: the server embeds for every preset', () => {
     setup()
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'synthetic' } })

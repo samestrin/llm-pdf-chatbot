@@ -1,12 +1,14 @@
 import { useId, useState, type FormEvent } from 'react'
 import type { Preset } from './api'
-import type { ModelCredentials, StoredCredentials } from './modelAccess'
+import type { PresetKeys, StoredCredentials } from './modelAccess'
 
 /**
  * The key panel of a public demo: a preset dropdown fed by `GET /presets`, the
- * visitor's own key or a demo code, a remember box and a clear button. The secret
- * is saved by the page (session storage, or local storage with "remember") and
- * sent only as a request header; Clear wipes it from both stores.
+ * visitor's own key or a demo code per provider, a remember box and a clear
+ * button. Switching provider shows that provider's key, never another's. The
+ * keys are saved by the page (session storage, or local storage with "remember")
+ * and each is sent only as a request header with its own preset; Clear wipes
+ * every key from both stores.
  */
 export default function KeyPanel({
   presets,
@@ -20,25 +22,41 @@ export default function KeyPanel({
   /** The model the server embeds every document and question with; null when none. */
   embeddingModel?: string | null
   stored: StoredCredentials | null
-  onSave: (credentials: ModelCredentials, remember: boolean) => void
+  onSave: (credentials: PresetKeys, remember: boolean) => void
   onClear: () => void
   onClose: () => void
 }) {
   const id = useId()
   const [presetId, setPresetId] = useState(stored?.preset ?? presets[0]?.id ?? '')
-  const [secret, setSecret] = useState(stored?.secret ?? '')
+  // One draft key per preset, so switching provider and back keeps what was typed.
+  const [keys, setKeys] = useState<Record<string, string>>(stored?.keys ?? {})
+  const [secret, setSecret] = useState(
+    () => (stored?.keys ?? {})[stored?.preset ?? presets[0]?.id ?? ''] ?? '',
+  )
   const [remember, setRemember] = useState(stored?.remember ?? false)
   const preset = presets.find((p) => p.id === presetId)
   const isDemo = preset?.kind === 'demo'
+
+  function onPresetChange(next: string) {
+    setKeys((prev) => ({ ...prev, [presetId]: secret }))
+    setPresetId(next)
+    setSecret(keys[next] ?? '')
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     const trimmed = secret.trim()
     if (!trimmed || !preset) return
-    onSave({ preset: preset.id, secret: trimmed }, remember)
+    const next: Record<string, string> = {}
+    for (const [id, value] of Object.entries({ ...keys, [preset.id]: trimmed })) {
+      const key = value.trim()
+      if (key) next[id] = key
+    }
+    onSave({ preset: preset.id, keys: next }, remember)
   }
 
   function onClearClick() {
+    setKeys({})
     setSecret('')
     setRemember(false)
     onClear()
@@ -56,7 +74,7 @@ export default function KeyPanel({
         <select
           id={`${id}-preset`}
           value={presetId}
-          onChange={(e) => setPresetId(e.target.value)}
+          onChange={(e) => onPresetChange(e.target.value)}
         >
           {presets.map((p) => (
             <option key={p.id} value={p.id}>
