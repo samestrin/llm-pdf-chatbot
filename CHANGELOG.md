@@ -6,6 +6,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Changed
 
+- Buttons use the shared demo shell's sizes: primary and secondary buttons are 42 px tall (now an explicit control-height token, not inherited padding), and small buttons are 32 px tall, growing to a 44 px touch target below 768 px. The distinct neutral disabled style is unchanged, and text-like buttons (document names, Delete, citation chips) keep their inline size.
 - The page uses the shared demo shell's header and width: a sticky 56 px header bar across the page with the logo and the name **PDF Chat** (a link home), a `Main` nav with **Chat** and **API** (`/api/docs`) from 768 px up, and the theme button at the right. The title "LLM PDF Chatbot" and a one-line tagline now open the page under the bar, with "Backend is down" below them when the health check fails. The content is 76rem (1216 px) wide, with its 1rem side gutter outside that width (it was 1184 px).
 
 ### Fixed

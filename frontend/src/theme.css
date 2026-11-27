@@ -76,6 +76,11 @@
   /* Layout */
   --page-max: 76rem;
   --sidebar: 22rem;
+
+  /* Control heights (the demo shell): 42 px actions, 32 px small, 44 px touch. */
+  --control-height: 2.625rem;
+  --control-height-small: 2rem;
+  --control-height-touch: 2.75rem;
 }
 
 :root[data-theme='light'] {
@@ -203,7 +208,9 @@ input[type='file'] {
 }
 
 /* Primary: Ask, the sample button and the file chooser's button. Hover, focus and
-   disabled each look different; disabled is neutral, never a faded primary. */
+   disabled each look different; disabled is neutral, never a faded primary.
+   The height is the shell's 42 px, explicit so it does not ride on inherited
+   padding and line-height. */
 button,
 input[type='file']::file-selector-button {
   cursor: pointer;
@@ -213,9 +220,12 @@ input[type='file']::file-selector-button {
   border-radius: var(--radius-sm);
   font: inherit;
   font-weight: var(--weight-medium);
+  height: var(--control-height);
 }
 
+/* The chooser's button stays compact inside the drop zone, not a 42 px action. */
 input[type='file']::file-selector-button {
+  height: auto;
   padding: var(--space-1) var(--space-3);
   margin-right: var(--space-3);
 }
@@ -260,8 +270,16 @@ button.secondary:disabled {
 }
 
 button.small {
+  height: var(--control-height-small);
   padding: 0 var(--space-2);
   font-size: var(--text-sm);
+}
+
+/* Below 48rem a small button grows to a 44 px touch target. */
+@media (max-width: 47.99rem) {
+  button.small {
+    height: var(--control-height-touch);
+  }
 }
 
 /* A file name on one line, cut with an ellipsis; the element's title has the whole name. */
@@ -436,11 +454,11 @@ label {
 }
 
 /* The shell size, explicit so it does not ride on inherited padding and
-   line-height: 2.625rem = 42 px tall, 16 px text. The look is button.secondary. */
+   line-height: 42 px tall, 16 px text. The look is button.secondary. */
 .theme-toggle {
   flex: none;
   white-space: nowrap;
-  height: 2.625rem;
+  height: var(--control-height);
   font-size: var(--text-base);
 }
 
@@ -591,6 +609,7 @@ label {
 
 /* The file name opens the document in the viewer: text that is a button. */
 .document-list .open-document {
+  height: auto;
   background: transparent;
   color: inherit;
   border-color: transparent;
@@ -607,6 +626,7 @@ label {
 
 .document-list .delete-button {
   flex: none;
+  height: auto;
   background: transparent;
   color: var(--color-danger);
   border-color: transparent;
@@ -736,6 +756,7 @@ blockquote {
 }
 
 .citation-chip button {
+  height: auto;
   background: var(--color-accent-subtle);
   color: var(--color-accent);
   border-color: transparent;
