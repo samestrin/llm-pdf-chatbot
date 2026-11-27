@@ -53,6 +53,17 @@ def make_engine() -> Engine:
     return create_engine(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
 
 
+# The repo's MIT LICENSE, served at same-origin /LICENSE for the footer's licence link
+# (owner decision 2026-11-27, EST-9380). In the image it sits beside app/ (the Dockerfile
+# copies it); in a source checkout it is at the repo root, one level above backend/.
+def license_file() -> Path:
+    for parent in Path(__file__).resolve().parents[1:3]:
+        candidate = parent / "LICENSE"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError("no LICENSE beside app/ or at the repo root")
+
+
 def package_version() -> str:
     """Read pyproject.toml beside app/: the project is never installed, so metadata has no version."""
     pyproject = Path(__file__).parents[1] / "pyproject.toml"
@@ -165,6 +176,12 @@ def create_app(
     @app.get("/docs/scalar.js", include_in_schema=False)
     def scalar_script() -> FileResponse:
         return FileResponse(STATIC_DIR / "scalar.js", media_type="text/javascript")
+
+    # The licence is a file, not an endpoint: out of the schema, like /docs. Public, with
+    # no credentials dependency, and a 200 with the file itself, never a redirect.
+    @app.get("/LICENSE", include_in_schema=False)
+    def license_text() -> FileResponse:
+        return FileResponse(license_file(), media_type="text/plain")
 
     return app
 

@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build both images
         run: |
-          docker build -t "llm-pdf-chatbot-backend:$TAG" backend
+          docker build -t "llm-pdf-chatbot-backend:$TAG" -f backend/Dockerfile .
           docker build -t "llm-pdf-chatbot-frontend:$TAG" frontend
       - name: Save both images
         if: vars.PUBLISH_IMAGES == 'true' && startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)

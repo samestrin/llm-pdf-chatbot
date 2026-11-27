@@ -78,6 +78,22 @@ curl -sSf -o /dev/null "http://localhost:${FRONTEND_PORT}${script}" \
   || fail "GET ${script} failed"
 echo "page and ${script} served"
 
+echo "--- GET /LICENSE through the frontend (the licence link's same-origin path)"
+license_file=$(mktemp)
+license_meta=$(curl -sS -o "$license_file" -w '%{http_code} %{content_type}' \
+  "http://localhost:${FRONTEND_PORT}/LICENSE")
+echo "$license_meta"
+case "$license_meta" in
+  "200 text/plain"*) ;;
+  *) rm -f "$license_file"; fail "GET /LICENSE through the frontend was $license_meta, want 200 text/plain" ;;
+esac
+cmp -s "$license_file" LICENSE \
+  || { rm -f "$license_file"; fail "GET /LICENSE through the frontend is not the repo LICENSE"; }
+rm -f "$license_file"
+curl -sSf "http://localhost:${BACKEND_PORT}/LICENSE" | cmp -s - LICENSE \
+  || fail "GET /LICENSE on the backend is not the repo LICENSE"
+echo "the repo LICENSE served at /LICENSE, same origin"
+
 echo "--- GET /api/health through the frontend (nginx proxy)"
 proxied=$(curl -sSf "http://localhost:${FRONTEND_PORT}/api/health") \
   || fail "GET /api/health through the frontend failed"

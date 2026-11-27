@@ -39,7 +39,10 @@ services:
       - default
 
   backend:
-    build: ./backend
+    # The repo root, so the image ships the repo LICENSE (backend/Dockerfile).
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: llm-pdf-chatbot-backend
     restart: unless-stopped
     env_file: .env.proxy

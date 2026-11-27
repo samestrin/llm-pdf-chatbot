@@ -15,7 +15,10 @@ services:
       retries: 30
 
   backend:
-    build: ./backend
+    # The repo root, so the image ships the repo LICENSE (backend/Dockerfile).
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-chatbot}
       UPLOAD_DIR: /app/data/uploads
