@@ -24,9 +24,10 @@ test('shows the backend as down when /api/health fails, with no Retry', async ({
   api.on('GET', '/api/health', json({ detail: 'database unavailable' }, 503))
   await page.goto('/')
 
-  const banner = page.getByRole('banner')
-  await expect(banner.getByRole('status')).toHaveText('Backend is down')
-  await expect(banner.getByRole('button', { name: 'Retry' })).toHaveCount(0)
+  const main = page.getByRole('main')
+  await expect(main.getByRole('status')).toHaveText('Backend is down')
+  await expect(main.getByRole('status')).toBeVisible()
+  await expect(main.getByRole('button', { name: 'Retry' })).toHaveCount(0)
 })
 
 test('serves the committed fixture PDF through a route fixture', async ({ page, api }) => {

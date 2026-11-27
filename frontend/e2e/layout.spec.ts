@@ -89,6 +89,55 @@ for (const scheme of ['light', 'dark'] as const) {
   }
 }
 
+test('at 1600 px the header bar and the content are 1216 px wide and the bar is 56 px tall', async ({
+  page,
+  api,
+}) => {
+  withContent(api)
+  await page.setViewportSize({ width: 1600, height: HEIGHT })
+  await page.goto('/')
+  await expect(page.getByRole('listitem', { name: LONG_NAME })).toBeVisible()
+
+  // The shell measures the bar's inner row and main's inner container (docs/demo-shell.md).
+  const row = (await page.locator('header .app-bar').boundingBox())!
+  const content = (await page.locator('main > :first-child').boundingBox())!
+  expect(row.width).toBe(1216)
+  expect(row.height).toBe(56)
+  expect(content.width).toBe(1216)
+  expect(row.x).toBe(content.x)
+  // Logo, name and nav slot are in the bar; the page title is not.
+  const banner = page.getByRole('banner')
+  await expect(banner.getByRole('link', { name: 'PDF Chat' })).toBeVisible()
+  await expect(banner.getByRole('navigation', { name: 'Main' })).toBeVisible()
+  await expect(banner.getByRole('heading')).toHaveCount(0)
+  await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible()
+})
+
+test('the header bar stays at the top while the page scrolls', async ({ page, api }) => {
+  withContent(api)
+  await page.setViewportSize({ width: 1280, height: 400 })
+  await page.goto('/')
+  await ask(page, 'How did revenue do?')
+  await page.mouse.wheel(0, 2000)
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+
+  const bar = (await page.getByRole('banner').boundingBox())!
+  expect(bar.y).toBe(0)
+  await expect(page.getByRole('banner').getByRole('link', { name: 'PDF Chat' })).toBeInViewport()
+})
+
+test('below 48rem the nav slot is hidden and the bar does not scroll sideways', async ({
+  page,
+  api,
+}) => {
+  withContent(api)
+  await page.setViewportSize({ width: 360, height: HEIGHT })
+  await page.goto('/')
+  await expect(page.getByRole('banner').getByRole('link', { name: 'PDF Chat' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Main' })).toBeHidden()
+  expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0)
+})
+
 test('on a phone the documents panel stacks above the chat at full width', async ({
   page,
   api,
