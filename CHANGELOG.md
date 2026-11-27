@@ -7,6 +7,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 ### Changed
 
 - The page uses the shared demo shell's header and width: a sticky 56 px header bar across the page with the logo and the name **PDF Chat** (a link home), a `Main` nav with **Chat** and **API** (`/api/docs`) from 768 px up, and the theme button at the right. The title "LLM PDF Chatbot" and a one-line tagline now open the page under the bar, with "Backend is down" below them when the health check fails. The content is 76rem (1216 px) wide, with its 1rem side gutter outside that width (it was 1184 px).
+- In a public demo the key entry is the shared demo shell's open **Model access** panel under the title, not a header button that opened it. The public notice ("Public demo: do not upload private files. …") is its first line, in muted text, and no longer a bar in the Documents sidebar. Then, in one row from 768 px up and stacked full width below: **Provider**, the key field (labelled **Demo code**, or **<provider> API key**), **Remember on this device** and **Clear**. The panel saves as you type, so there is no Save or Close button. A question, upload or sample asked for with no key moves the focus to the key field. The keys are stored as before: one per provider, in local storage with Remember and session storage without, and Clear wipes both.
 
 ### Fixed
 

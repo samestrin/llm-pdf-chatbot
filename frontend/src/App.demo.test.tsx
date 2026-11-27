@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import App from './App'
+import App, { publicNotice } from './App'
 import sampleQuestions from '../public/samples/questions.json'
 import { STORAGE_KEY } from './modelAccess'
 
@@ -93,13 +93,18 @@ function ask(question: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
 }
 
-/** Open the key panel, pick a preset, type the secret and save. */
+const LABELS: Record<string, string> = {
+  openai: 'OpenAI API key',
+  synthetic: 'Synthetic API key',
+  demo: 'Demo code',
+}
+
+/** In the open key panel, pick a preset and type the secret; it saves as it is typed. */
 function saveKey(preset: string, secret: string, remember = false) {
   fireEvent.change(screen.getByLabelText('Provider'), { target: { value: preset } })
-  const label = preset === 'demo' ? 'Demo code' : 'API key'
-  fireEvent.change(screen.getByLabelText(label), { target: { value: secret } })
-  if (remember) fireEvent.click(screen.getByLabelText('Remember on this device'))
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  fireEvent.change(screen.getByLabelText(LABELS[preset]), { target: { value: secret } })
+  if (remember && !screen.getByLabelText<HTMLInputElement>('Remember on this device').checked)
+    fireEvent.click(screen.getByLabelText('Remember on this device'))
 }
 
 describe('App in a public demo', () => {
@@ -109,25 +114,30 @@ describe('App in a public demo', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('shows the public notice with the server TTL and the key panel control', async () => {
+  it('opens the key panel under the title, the notice with the server TTL its first line', async () => {
     stubDemoFetch()
     render(<App />)
-    expect(
-      await screen.findByText(
-        'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
-      ),
-    ).toBeInTheDocument()
-    expect(
-      within(screen.getByRole('banner')).getByRole('button', { name: 'Add a key or demo code' }),
-    ).toBeInTheDocument()
+    const panel = await screen.findByRole('region', { name: 'Model access' })
+    expect(panel.firstElementChild).toHaveTextContent(
+      'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
+    )
+    // Under the title block, before the backend status and the layout.
+    expect(panel.previousElementSibling).toHaveClass('app-heading')
+    // No header key button, no dialog, no notice in the sidebar.
+    const banner = screen.getByRole('banner')
+    expect(within(banner).queryByRole('button', { name: /key|code/i })).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const documents = await screen.findByRole('complementary', { name: 'Documents' })
+    expect(within(documents).queryByText(/Public demo/)).toBeNull()
+    expect(screen.getAllByText(/Public demo/)).toHaveLength(1)
   })
 
-  it('makes no model call without a key or code: asking opens the panel instead', async () => {
+  it('makes no model call without a key or code: asking focuses the key field instead', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
     await screen.findByText(/Public demo/)
     ask('How long is the lease?')
-    expect(screen.getByRole('region', { name: 'Model key' })).toBeInTheDocument()
+    expect(screen.getByLabelText('OpenAI API key')).toHaveFocus()
     expect(chatCalls(fetch)).toEqual([])
     // The question is kept, so it can be asked once a key is saved.
     expect(screen.getByLabelText('Ask a question')).toHaveValue('How long is the lease?')
@@ -136,11 +146,7 @@ describe('App in a public demo', () => {
   it('sends the saved key only in the request headers of the chat call', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('openai', 'sk-visitor-key')
     ask('How long is the lease?')
     await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
@@ -163,21 +169,16 @@ describe('App in a public demo', () => {
   it('remembers the key in local storage only when the box is ticked, and reloads it', async () => {
     stubDemoFetch()
     const { unmount } = render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('openai', 'sk-visitor-key', true)
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull()
     unmount()
     const reloaded = stubDemoFetch()
     render(<App />)
-    // The remembered key is used without opening the panel.
-    expect(
-      await screen.findByRole('button', { name: 'Model key: OpenAI' }),
-    ).toBeInTheDocument()
+    // The remembered key is back in the panel and used straight away.
+    expect(await screen.findByLabelText('OpenAI API key')).toHaveValue('sk-visitor-key')
+    expect(screen.getByLabelText('Remember on this device')).toBeChecked()
     ask('again')
     await vi.waitFor(() => expect(chatCalls(reloaded)).toHaveLength(1))
   })
@@ -187,19 +188,12 @@ describe('App in a public demo', () => {
     async (remember) => {
       const fetch = stubDemoFetch()
       render(<App />)
-      fireEvent.click(
-        await within(screen.getByRole('banner')).findByRole('button', {
-          name: 'Add a key or demo code',
-        }),
-      )
+    await screen.findByRole('region', { name: 'Model access' })
       saveKey('demo', 'demo-code-123', remember)
-      // Switch to OpenAI and save its key; the demo code must not be forgotten.
-      fireEvent.click(screen.getByRole('button', { name: 'Model key: Demo code' }))
+      // Switch to OpenAI and type its key; the demo code must not be forgotten.
       saveKey('openai', 'sk-visitor-key')
-      fireEvent.click(screen.getByRole('button', { name: 'Model key: OpenAI' }))
       fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'demo' } })
       expect(screen.getByLabelText('Demo code')).toHaveValue('demo-code-123')
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
       ask('back on demo')
       await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
       const [, init] = chatCalls(fetch)[0] as [string, RequestInit]
@@ -220,33 +214,37 @@ describe('App in a public demo', () => {
     },
   )
 
-  it('clear wipes the key from both stores, and the next ask opens the panel again', async () => {
+  it('clear wipes the key from both stores, and the next ask goes back to the key field', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('openai', 'sk-visitor-key', true)
-    fireEvent.click(screen.getByRole('button', { name: 'Model key: OpenAI' }))
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull()
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     ask('after clear')
-    expect(screen.getByRole('region', { name: 'Model key' })).toBeInTheDocument()
+    expect(screen.getByLabelText('OpenAI API key')).toHaveFocus()
+    expect(chatCalls(fetch)).toEqual([])
+  })
+
+  it('emptying the only key stores nothing, and the next ask goes back to the key field', async () => {
+    const fetch = stubDemoFetch()
+    render(<App />)
+    await screen.findByRole('region', { name: 'Model access' })
+    saveKey('openai', 'sk-visitor-key', true)
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
+    fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: '' } })
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    ask('no key left')
+    expect(screen.getByLabelText('OpenAI API key')).toHaveFocus()
     expect(chatCalls(fetch)).toEqual([])
   })
 
   it('sends a demo code as X-Demo-Code, never as X-Model-Key', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('demo', 'demo-code-123')
     ask('with a code')
     await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
@@ -263,11 +261,7 @@ describe('App in a public demo', () => {
       'This collection was embedded with text-embedding-3-small; switch back to OpenAI to ask about it'
     stubDemoFetch({ chat: () => Response.json({ detail: message }, { status: 409 }) })
     render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('synthetic', 'sk-other')
     ask('mismatched')
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
@@ -282,7 +276,7 @@ describe('App in a public demo', () => {
     ).toBeInTheDocument()
   })
 
-  it('the upload control explains it needs a code or key, and opens the panel', async () => {
+  it('the upload control explains it needs a code or key, and goes to the key field', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
     const documents = await screen.findByRole('complementary', { name: 'Documents' })
@@ -291,18 +285,14 @@ describe('App in a public demo', () => {
     ).toBeInTheDocument()
     expect(within(documents).getByLabelText('PDF', { selector: 'input' })).toBeDisabled()
     fireEvent.click(within(documents).getByRole('button', { name: 'Add a key or demo code' }))
-    expect(screen.getByRole('region', { name: 'Model key' })).toBeInTheDocument()
+    expect(screen.getByLabelText('OpenAI API key')).toHaveFocus()
     expect(fetch.mock.calls.filter(([url]) => url.includes('/documents'))).toEqual([])
   })
 
   it('a preset with no embedding model can upload and ask', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('synthetic', 'sk-syn')
     const documents = screen.getByRole('complementary', { name: 'Documents' })
     expect(within(documents).queryByText(/no embedding model/)).toBeNull()
@@ -358,11 +348,7 @@ describe('App in a public demo', () => {
     }
     vi.stubGlobal('XMLHttpRequest', FakeXhr)
     render(<App />)
-    fireEvent.click(
-      await within(screen.getByRole('banner')).findByRole('button', {
-        name: 'Add a key or demo code',
-      }),
-    )
+    await screen.findByRole('region', { name: 'Model access' })
     saveKey('openai', 'sk-visitor-key')
     const documents = screen.getByRole('complementary', { name: 'Documents' })
     const input = within(documents).getByLabelText('PDF', { selector: 'input' })
@@ -373,6 +359,17 @@ describe('App in a public demo', () => {
       ['X-Model-Preset', 'openai'],
       ['X-Model-Key', 'sk-visitor-key'],
     ])
+  })
+})
+
+describe('publicNotice', () => {
+  it('names the TTL the server gave, or says uploads go automatically', () => {
+    expect(publicNotice(45)).toBe(
+      'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
+    )
+    expect(publicNotice(null)).toBe(
+      'Public demo: do not upload private files. Uploads are deleted automatically.',
+    )
   })
 })
 
@@ -394,6 +391,7 @@ describe('App outside a public demo', () => {
     await screen.findByText('Embedded with text-embedding-3-small')
     expect(screen.queryByText(/Public demo/)).toBeNull()
     expect(screen.queryByRole('button', { name: /key or demo code/ })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Model access' })).toBeNull()
     ask('no demo')
     await vi.waitFor(() =>
       expect(fetch.mock.calls.filter(([url]) => url.endsWith('/chat'))).toHaveLength(1),

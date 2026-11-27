@@ -19,7 +19,7 @@ Open <http://localhost:8080> (`FRONTEND_PORT`) once the stack is up.
 
 ## Asking
 
-When the active collection holds the sample PDF, a few questions it answers show as chips above the question box (from `frontend/public/samples/questions.json`); clicking one asks it. In a public demo with no key or code saved, the click puts the question in the box and opens the key panel.
+When the active collection holds the sample PDF, a few questions it answers show as chips above the question box (from `frontend/public/samples/questions.json`); clicking one asks it. In a public demo with no key or code saved, the click puts the question in the box and moves the focus to the key field of the **Model access** panel at the top of the page.
 
 Type a question and press **Ask** (or Enter; Shift+Enter starts a new line). The question is asked in the active collection. The answer streams in under a short line that says where it was found, and every claim carries a citation chip with the page it came from.
 
@@ -52,6 +52,6 @@ The page fits 360 px phones to desktops without sideways scrolling: on a desktop
 
 ## Keyboard and screen readers
 
-The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a sticky header bar (the logo and name `PDF Chat`, a `Main` nav with `Chat` and `API` from 768 px up, and the theme button), then `main` with the page title, the documents sidebar (`aside`) and the chat. The content is at most 76rem (1216 px) wide. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
+The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a sticky header bar (the logo and name `PDF Chat`, a `Main` nav with `Chat` and `API` from 768 px up, and the theme button), then `main` with the page title, in a public demo the open `Model access` key panel, the documents sidebar (`aside`) and the chat. The content is at most 76rem (1216 px) wide. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
 
 `frontend/e2e/a11y.spec.ts` runs axe over the empty, loaded-chat and viewer-open screens in both themes and fails on any serious or critical violation. It also runs a keyboard-only upload, ask, open and close.

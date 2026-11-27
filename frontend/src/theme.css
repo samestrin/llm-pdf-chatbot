@@ -444,46 +444,67 @@ label {
   font-size: var(--text-base);
 }
 
-/* Public demo: the key panel, the notice and the notes about keys and models */
+/* Public demo: the key panel, its notice and the notes about keys and models */
 
 .key-toggle {
   min-width: 0;
 }
 
+/* The shell's key panel: the notice, then one row of provider, key field, remember
+   and clear, stacked into one full-width column below 48rem. */
 .key-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
 
-.key-panel form {
+.key-notice {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.key-row {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-2);
-  max-width: 28rem;
+  gap: var(--space-3);
 }
 
-.key-panel label {
+.key-field {
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.key-row select,
+.key-row input[type='password'] {
+  min-height: 2.625rem;
 }
 
 .key-panel label.remember-field {
   flex-direction: row;
   align-items: center;
   gap: var(--space-2);
+  min-height: 2.625rem;
 }
 
-.key-panel-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
+@media (min-width: 48rem) {
+  .key-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
 
-.demo-notice {
-  color: var(--color-muted);
-  font-size: var(--text-sm);
-  border-left: 3px solid var(--color-accent);
-  padding-left: var(--space-2);
+  .key-preset {
+    min-width: 220px;
+  }
+
+  .key-secret {
+    flex: 1;
+    min-width: 260px;
+  }
 }
 
 .key-note {
