@@ -35,6 +35,15 @@ export function suggestionsFor(collection: Collection | undefined): string[] {
   return [...new Set([...names].flatMap((name) => SAMPLE_QUESTIONS[name] ?? []))]
 }
 
+/** The public demo's notice, the key panel's first line: uploads last `ttlMinutes`. */
+export function publicNotice(ttlMinutes: number | null): string {
+  return `Public demo: do not upload private files. ${
+    ttlMinutes !== null
+      ? `Uploads are deleted after ${ttlMinutes} minutes.`
+      : 'Uploads are deleted automatically.'
+  }`
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | 'checking'>('checking')
   // `null` until the documents panel first loads them.
@@ -46,7 +55,8 @@ export default function App() {
   // does not answer it (then the page works as it always did, without credentials).
   const [presetList, setPresetList] = useState<PresetList | null>(null)
   const [creds, setCreds] = useState<StoredCredentials | null>(() => loadCredentials())
-  const [panelOpen, setPanelOpen] = useState(false)
+  // The key panel's field: with no key, asking or uploading sends the visitor there.
+  const keyField = useRef<HTMLInputElement>(null)
   // The open PDF viewer, and the control that opened it, so closing puts focus back there.
   const [viewing, setViewing] = useState<Viewing | null>(null)
   const opener = useRef<HTMLElement | null>(null)
@@ -59,10 +69,9 @@ export default function App() {
     opener.current?.focus()
   }, [])
   const demo = presetList?.public_demo === true
-  const preset = demo ? (presetList?.presets.find((p) => p.id === creds?.preset) ?? null) : null
   // Only the active preset's own key goes to a model call, never another preset's.
   const credentials = activeCredentials(creds)
-  const openPanel = useCallback(() => setPanelOpen(true), [])
+  const toKeyField = useCallback(() => keyField.current?.focus(), [])
   const onCollections = useCallback(
     (loaded: Collection[]) => {
       setCollections(loaded)
@@ -79,9 +88,10 @@ export default function App() {
   }, [])
 
   function onSaveKey(credentials: PresetKeys, remember: boolean) {
-    saveCredentials(credentials, remember)
+    // No key left to keep: nothing is stored, as after Clear.
+    if (Object.keys(credentials.keys).length > 0) saveCredentials(credentials, remember)
+    else clearCredentials()
     setCreds({ ...credentials, remember })
-    setPanelOpen(false)
   }
 
   function onClearKey() {
@@ -117,16 +127,6 @@ export default function App() {
             <a href="/api/docs">API</a>
           </nav>
           <div className="app-bar-actions">
-            {demo && (
-              <button
-                type="button"
-                className="secondary small key-toggle"
-                aria-expanded={panelOpen}
-                onClick={() => setPanelOpen((open) => !open)}
-              >
-                {creds ? `Model key: ${preset?.label ?? creds.preset}` : 'Add a key or demo code'}
-              </button>
-            )}
             <ThemeToggle />
           </div>
         </div>
@@ -140,14 +140,15 @@ export default function App() {
               and page it came from.
             </p>
           </div>
-          {demo && panelOpen && presetList && (
+          {demo && presetList && (
             <KeyPanel
               presets={presetList.presets}
+              notice={publicNotice(presetList.upload_ttl_minutes)}
               embeddingModel={presetList.embedding_model ?? null}
               stored={creds}
               onSave={onSaveKey}
               onClear={onClearKey}
-              onClose={() => setPanelOpen(false)}
+              fieldRef={keyField}
             />
           )}
           {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
@@ -165,11 +166,7 @@ export default function App() {
               }
               demo={
                 demo && presetList
-                  ? {
-                      ttlMinutes: presetList.upload_ttl_minutes,
-                      credentials,
-                      onMissing: openPanel,
-                    }
+                  ? { credentials, onMissing: toKeyField }
                   : undefined
               }
             />
@@ -179,7 +176,7 @@ export default function App() {
                 loading={collections === null && !loadFailed}
                 empty={collections !== null && collections.every((c) => c.documents.length === 0)}
                 ingesting={ingesting}
-                modelAccess={demo ? { credentials, onMissing: openPanel } : undefined}
+                modelAccess={demo ? { credentials, onMissing: toKeyField } : undefined}
                 suggestions={suggestions}
                 onOpen={openViewer}
                 viewer={

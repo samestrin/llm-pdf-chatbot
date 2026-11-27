@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import App from './App'
+import App, { publicNotice } from './App'
 import sampleQuestions from '../public/samples/questions.json'
 import { STORAGE_KEY } from './modelAccess'
 
@@ -227,6 +227,20 @@ describe('App in a public demo', () => {
     expect(chatCalls(fetch)).toEqual([])
   })
 
+  it('emptying the only key stores nothing, and the next ask goes back to the key field', async () => {
+    const fetch = stubDemoFetch()
+    render(<App />)
+    await screen.findByRole('region', { name: 'Model access' })
+    saveKey('openai', 'sk-visitor-key', true)
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
+    fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: '' } })
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    ask('no key left')
+    expect(screen.getByLabelText('OpenAI API key')).toHaveFocus()
+    expect(chatCalls(fetch)).toEqual([])
+  })
+
   it('sends a demo code as X-Demo-Code, never as X-Model-Key', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
@@ -345,6 +359,17 @@ describe('App in a public demo', () => {
       ['X-Model-Preset', 'openai'],
       ['X-Model-Key', 'sk-visitor-key'],
     ])
+  })
+})
+
+describe('publicNotice', () => {
+  it('names the TTL the server gave, or says uploads go automatically', () => {
+    expect(publicNotice(45)).toBe(
+      'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
+    )
+    expect(publicNotice(null)).toBe(
+      'Public demo: do not upload private files. Uploads are deleted automatically.',
+    )
   })
 })
 

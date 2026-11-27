@@ -89,7 +89,10 @@ async function ask(page: import('@playwright/test').Page, question: string) {
   await page.getByRole('button', { name: 'Ask' }).click()
 }
 
-/** Fill the open key panel and save. */
+const fieldLabel = (presetLabel: string) =>
+  presetLabel === 'Demo code' ? 'Demo code' : `${presetLabel} API key`
+
+/** Fill the open key panel; it saves as it is typed. */
 async function saveKey(
   page: import('@playwright/test').Page,
   presetLabel: string,
@@ -97,9 +100,8 @@ async function saveKey(
   remember = false,
 ) {
   await page.getByLabel('Provider').selectOption({ label: presetLabel })
-  await page.getByLabel(presetLabel === 'Demo code' ? 'Demo code' : 'API key').fill(secret)
+  await page.getByLabel(fieldLabel(presetLabel)).fill(secret)
   if (remember) await page.getByLabel('Remember on this device').check()
-  await page.getByRole('button', { name: 'Save' }).click()
 }
 
 const stored = (page: import('@playwright/test').Page) =>
@@ -108,25 +110,80 @@ const stored = (page: import('@playwright/test').Page) =>
     local: localStorage.getItem(key),
   }), STORAGE_KEY)
 
-test('shows the public notice with the TTL and each collection’s embedding model', async ({
+const NOTICE = 'Public demo: do not upload private files. Uploads are deleted after 45 minutes.'
+
+test('the key panel is open at the top, the notice its first line, and none in the sidebar', async ({
   page,
 }) => {
   await page.goto('/')
+  const panel = page.locator('section[aria-label="Model access"]')
+  await expect(panel).toBeVisible()
+  await expect(panel.locator(':scope > :first-child')).toHaveText(NOTICE)
+  await expect(page.getByText(NOTICE)).toHaveCount(1)
   await expect(
-    page.getByText(
-      'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
-    ),
-  ).toBeVisible()
+    page.getByRole('complementary', { name: 'Documents' }).getByText(/Public demo/),
+  ).toHaveCount(0)
+  // No header key button and no dialog.
+  await expect(page.getByRole('banner').getByRole('button', { name: /key|code/i })).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  // Under the title block, above the documents and the chat.
+  const title = await page.getByRole('heading', { level: 1 }).boundingBox()
+  const box = await panel.boundingBox()
+  const documents = await page.getByRole('complementary', { name: 'Documents' }).boundingBox()
+  expect(box!.y).toBeGreaterThan(title!.y + title!.height - 1)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(documents!.y)
   await expect(page.getByText('Embedded with text-embedding-3-small')).toBeVisible()
 })
 
-test('no model call without a key or code: asking opens the key panel instead', async ({
+/** The panel's controls, in DOM order, with their boxes. */
+async function controls(page: import('@playwright/test').Page) {
+  const panel = page.getByRole('region', { name: 'Model access' })
+  const list = [
+    panel.getByLabel('Provider'),
+    panel.getByLabel('OpenAI API key'),
+    panel.getByLabel('Remember on this device'),
+    panel.getByRole('button', { name: 'Clear' }),
+  ]
+  return Promise.all(list.map(async (l) => (await l.boundingBox())!))
+}
+
+test('at 1280 px the controls sit in one row in the shell order', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/')
+  const panel = page.getByRole('region', { name: 'Model access' })
+  await expect(panel).toBeVisible()
+  // Provider, key field, remember, clear: nothing else is a control in the panel.
+  await expect(panel.locator('select, input, button')).toHaveCount(4)
+  const [provider, field, remember, clear] = await controls(page)
+  expect(provider.x + provider.width).toBeLessThanOrEqual(field.x)
+  expect(field.x + field.width).toBeLessThanOrEqual(remember.x)
+  expect(remember.x + remember.width).toBeLessThanOrEqual(clear.x)
+  // One row: their bottoms line up (align-items: flex-end).
+  const bottoms = [provider, field, clear].map((b) => Math.round(b.y + b.height))
+  expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThanOrEqual(1)
+  expect(provider.width).toBeGreaterThanOrEqual(220)
+  expect(field.width).toBeGreaterThanOrEqual(260)
+})
+
+test('below 48rem the controls stack into one full-width column', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 900 })
+  await page.goto('/')
+  const panel = page.getByRole('region', { name: 'Model access' })
+  await expect(panel).toBeVisible()
+  const [provider, field, , clear] = await controls(page)
+  expect(provider.y + provider.height).toBeLessThanOrEqual(field.y)
+  expect(field.y + field.height).toBeLessThanOrEqual(clear.y)
+  const row = (await panel.locator('.key-row').boundingBox())!
+  for (const b of [provider, field, clear]) expect(Math.abs(b.width - row.width)).toBeLessThanOrEqual(1)
+})
+
+test('no model call without a key or code: asking goes to the key field instead', async ({
   page,
   api,
 }) => {
   await page.goto('/')
   await ask(page, 'How long is the lease?')
-  await expect(page.getByRole('region', { name: 'Model key' })).toBeVisible()
+  await expect(page.getByLabel('OpenAI API key')).toBeFocused()
   expect(api.calls).not.toContain('POST /api/collections/default/chat')
   // The question is kept for once a key is saved.
   await expect(page.getByLabel('Ask a question')).toHaveValue('How long is the lease?')
@@ -178,7 +235,7 @@ test('a demo code goes as X-Demo-Code, never as X-Model-Key', async ({ page, api
   expect(headers['x-model-key']).toBeUndefined()
 })
 
-test('remember keeps the key on the device; a reload uses it without the panel', async ({
+test('remember keeps the key on the device; a reload uses it straight away', async ({
   page,
   api,
 }) => {
@@ -190,7 +247,8 @@ test('remember keeps the key on the device; a reload uses it without the panel',
   expect(stores.session).toBeNull()
   expect(JSON.parse(stores.local!)).toMatchObject({ keys: { openai: KEY }, remember: true })
   await page.reload()
-  await expect(page.getByRole('button', { name: 'Model key: OpenAI' })).toBeVisible()
+  await expect(page.getByLabel('OpenAI API key')).toHaveValue(KEY)
+  await expect(page.getByLabel('Remember on this device')).toBeChecked()
   await ask(page, 'after reload')
   await expect(page.getByRole('article', { name: 'Answer' })).toBeVisible()
 })
@@ -206,18 +264,14 @@ for (const remember of [true, false]) {
       return answer(route)
     })
     await page.goto('/')
-    await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
     await saveKey(page, 'Demo code', 'demo-code-123', remember)
-    // Switch to OpenAI: its field is empty, and saving its key keeps the demo code.
-    await page.getByRole('button', { name: 'Model key: Demo code' }).click()
+    // Switch to OpenAI: its field is empty, and typing its key keeps the demo code.
     await page.getByLabel('Provider').selectOption({ label: 'OpenAI' })
-    await expect(page.getByLabel('API key')).toHaveValue('')
+    await expect(page.getByLabel('OpenAI API key')).toHaveValue('')
     await saveKey(page, 'OpenAI', KEY)
     // Switch back to the demo: the code is restored, not forgotten.
-    await page.getByRole('button', { name: 'Model key: OpenAI' }).click()
     await page.getByLabel('Provider').selectOption({ label: 'Demo code' })
     await expect(page.getByLabel('Demo code')).toHaveValue('demo-code-123')
-    await page.getByRole('button', { name: 'Save' }).click()
     const stores = await stored(page)
     const keep = remember ? stores.local : stores.session
     const drop = remember ? stores.session : stores.local
@@ -238,11 +292,8 @@ for (const remember of [true, false]) {
 
 test('clear wipes every stored key, not just the active preset’s', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
   await saveKey(page, 'Demo code', 'demo-code-123', true)
-  await page.getByRole('button', { name: 'Model key: Demo code' }).click()
   await saveKey(page, 'OpenAI', KEY)
-  await page.getByRole('button', { name: 'Model key: OpenAI' }).click()
   await page.getByRole('button', { name: 'Clear' }).click()
   expect(await stored(page)).toEqual({ session: null, local: null })
   // No preset shows a key any more.
@@ -250,19 +301,17 @@ test('clear wipes every stored key, not just the active preset’s', async ({ pa
   await expect(page.getByLabel('Demo code')).toHaveValue('')
 })
 
-test('clear wipes the key from both stores, and the next ask opens the panel again', async ({
+test('clear wipes the key from both stores, and the next ask goes to the key field', async ({
   page,
   api,
 }) => {
   await page.goto('/')
   await ask(page, 'before clear')
   await saveKey(page, 'OpenAI', KEY, true)
-  await page.getByRole('button', { name: 'Model key: OpenAI' }).click()
   await page.getByRole('button', { name: 'Clear' }).click()
   expect(await stored(page)).toEqual({ session: null, local: null })
-  await page.getByRole('button', { name: 'Close' }).click()
   await ask(page, 'after clear')
-  await expect(page.getByRole('region', { name: 'Model key' })).toBeVisible()
+  await expect(page.getByLabel('OpenAI API key')).toBeFocused()
   expect(api.calls).not.toContain('POST /api/collections/default/chat')
 })
 
@@ -277,7 +326,7 @@ test('a mismatched preset shows the backend’s plain message', async ({ page, a
   await expect(page.getByRole('alert')).toContainText(message)
 })
 
-test('the upload control explains it needs a code or key, and opens the panel', async ({
+test('the upload control explains it needs a code or key, and goes to the key field', async ({
   page,
   api,
 }) => {
@@ -286,11 +335,11 @@ test('the upload control explains it needs a code or key, and opens the panel', 
   await expect(documents.getByText('Uploading needs a demo code or your own key.')).toBeVisible()
   await expect(documents.getByLabel('PDF', { exact: true })).toBeDisabled()
   await documents.getByRole('button', { name: 'Add a key or demo code' }).click()
-  await expect(page.getByRole('region', { name: 'Model key' })).toBeVisible()
+  await expect(page.getByLabel('OpenAI API key')).toBeFocused()
   expect(api.calls.filter((c) => c.startsWith('POST /api/collections'))).toEqual([])
 })
 
-test('the sample PDF needs a code or key too: the panel opens, then the upload carries the headers', async ({
+test('the sample PDF needs a code or key too: it goes to the key field, then the upload carries the headers', async ({
   page,
   api,
 }) => {
@@ -304,7 +353,7 @@ test('the sample PDF needs a code or key too: the panel opens, then the upload c
   await page.goto('/')
   const documents = page.getByRole('complementary', { name: 'Documents' })
   await documents.getByRole('button', { name: 'Try a sample PDF' }).click()
-  await expect(page.getByRole('region', { name: 'Model key' })).toBeVisible()
+  await expect(page.getByLabel('OpenAI API key')).toBeFocused()
   await expect(documents.getByRole('alert')).toHaveText(
     'Uploading needs a demo code or your own key.',
   )
@@ -326,7 +375,6 @@ test('a preset with no embedding model can upload: the server embeds', async ({
     await route.fulfill({ status: 201, json: { id: 'n1', status: 'queued' } })
   })
   await page.goto('/')
-  await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
   await saveKey(page, 'Synthetic', 'sk-synthetic')
   const documents = page.getByRole('complementary', { name: 'Documents' })
   await expect(documents.getByText(/no embedding model/)).toHaveCount(0)
@@ -338,8 +386,7 @@ test('the demo page with the key panel open has no serious accessibility violati
   page,
 }) => {
   await page.goto('/')
-  await page.getByRole('banner').getByRole('button', { name: 'Add a key or demo code' }).click()
-  await expect(page.getByRole('region', { name: 'Model key' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Model access' })).toBeVisible()
   const { violations } = await new AxeBuilder({ page }).analyze()
   const serious = violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')

@@ -158,6 +158,16 @@ describe('KeyPanel', () => {
     expect(screen.getByLabelText('Remember on this device')).toBeChecked()
   })
 
+  it('a stored preset the server no longer offers falls back to the first one', () => {
+    const { onSave } = setup({ preset: 'gone', keys: { gone: 'old-key' }, remember: false })
+    expect(screen.getByLabelText('Provider')).toHaveValue('openai')
+    fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'sk-k' } })
+    expect(onSave).toHaveBeenLastCalledWith(
+      { preset: 'openai', keys: { gone: 'old-key', openai: 'sk-k' } },
+      false,
+    )
+  })
+
   it('clear empties the field and reports the clear', () => {
     const { onClear } = setup({
       preset: 'openai',
