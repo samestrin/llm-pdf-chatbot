@@ -154,7 +154,9 @@ describe('App in a public demo', () => {
     expect(url).not.toContain('sk-visitor-key')
     expect(String(init.body)).not.toContain('sk-visitor-key')
     // Session storage by default; local storage stays empty.
-    expect(JSON.parse(sessionStorage.getItem(STORAGE_KEY)!).secret).toBe('sk-visitor-key')
+    expect(JSON.parse(sessionStorage.getItem(STORAGE_KEY)!).keys).toEqual({
+      openai: 'sk-visitor-key',
+    })
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
@@ -179,6 +181,44 @@ describe('App in a public demo', () => {
     ask('again')
     await vi.waitFor(() => expect(chatCalls(reloaded)).toHaveLength(1))
   })
+
+  it.each([true, false])(
+    'switching provider and back restores the demo code (remember %s), sent only as X-Demo-Code',
+    async (remember) => {
+      const fetch = stubDemoFetch()
+      render(<App />)
+      fireEvent.click(
+        await within(screen.getByRole('banner')).findByRole('button', {
+          name: 'Add a key or demo code',
+        }),
+      )
+      saveKey('demo', 'demo-code-123', remember)
+      // Switch to OpenAI and save its key; the demo code must not be forgotten.
+      fireEvent.click(screen.getByRole('button', { name: 'Model key: Demo code' }))
+      saveKey('openai', 'sk-visitor-key')
+      fireEvent.click(screen.getByRole('button', { name: 'Model key: OpenAI' }))
+      fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'demo' } })
+      expect(screen.getByLabelText('Demo code')).toHaveValue('demo-code-123')
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      ask('back on demo')
+      await vi.waitFor(() => expect(chatCalls(fetch)).toHaveLength(1))
+      const [, init] = chatCalls(fetch)[0] as [string, RequestInit]
+      expect(init.headers).toEqual({
+        'Content-Type': 'application/json',
+        'X-Model-Preset': 'demo',
+        'X-Demo-Code': 'demo-code-123',
+      })
+      // Both keys live in the one store the remember box chose.
+      const keep = remember ? localStorage : sessionStorage
+      const drop = remember ? sessionStorage : localStorage
+      expect(JSON.parse(keep.getItem(STORAGE_KEY)!)).toEqual({
+        preset: 'demo',
+        keys: { demo: 'demo-code-123', openai: 'sk-visitor-key' },
+        remember,
+      })
+      expect(drop.getItem(STORAGE_KEY)).toBeNull()
+    },
+  )
 
   it('clear wipes the key from both stores, and the next ask opens the panel again', async () => {
     const fetch = stubDemoFetch()
@@ -281,6 +321,7 @@ describe('App in a public demo', () => {
       documents: [{ ...readyDoc, id: 's1', filename: 'sample.pdf' }],
     }
     const fetch = stubDemoFetch({ collections: [sample] })
+    // The old single-key shape: loading migrates it under its old preset.
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ preset: 'synthetic', secret: 'sk-syn', remember: true }),
