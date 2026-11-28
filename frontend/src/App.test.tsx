@@ -1,6 +1,19 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App, { copyrightYears } from './App'
 
+// The only external URL allowed in the page (docs/demo-shell.md, Footer):
+// the repo's LICENSE on GitHub. Everything else must be a relative reference.
+const LICENSE_URL = 'https://github.com/samestrin/llm-pdf-chatbot/blob/main/LICENSE'
+
+// A href is allowed when it is exactly the repo LICENSE URL, or a relative
+// reference: no scheme and not protocol-relative (`//host/...`).
+function isAllowedHref(href: string) {
+  return (
+    href === LICENSE_URL ||
+    (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('//'))
+  )
+}
+
 function stubFetch(response: () => Promise<Response>) {
   const fetch = vi.fn((url: string) =>
     url === '/api/collections' ? Promise.resolve(Response.json([])) : response(),
@@ -16,6 +29,29 @@ describe('copyrightYears', () => {
 
   it('shows the range otherwise', () => {
     expect(copyrightYears(2025, 2026)).toBe('2025–2026')
+  })
+})
+
+describe('isAllowedHref (the no-external-links check)', () => {
+  it('allows exactly the repo LICENSE URL and relative references', () => {
+    for (const href of [LICENSE_URL, '/', '/api/docs', '#chat', 'docs/api.md']) {
+      expect(isAllowedHref(href)).toBe(true)
+    }
+  })
+
+  it('refuses every other external URL', () => {
+    for (const href of [
+      'https://example.com/',
+      // Near misses of the allowed URL are still refused.
+      'http://github.com/samestrin/llm-pdf-chatbot/blob/main/LICENSE',
+      `${LICENSE_URL}/`,
+      `${LICENSE_URL}?plain=1`,
+      'https://github.com/samestrin/llm-pdf-chatbot/blob/main/README.md',
+      '//example.com/LICENSE',
+      'mailto:sam@example.com',
+    ]) {
+      expect(isAllowedHref(href)).toBe(false)
+    }
   })
 })
 
@@ -79,6 +115,25 @@ describe('App', () => {
     const links = within(nav).getAllByRole('link')
     // Only pages the app already serves: no Privacy or Terms page exists.
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['API', '/api/docs']])
+    // MIT License is a plain link to the repo's LICENSE on GitHub; the
+    // copyright text before it is unchanged (checked above).
+    expect(within(footer).getByRole('link', { name: 'MIT License' })).toHaveAttribute(
+      'href',
+      LICENSE_URL,
+    )
+  })
+
+  it('has no external links except the repo LICENSE on GitHub', () => {
+    stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
+    render(<App />)
+
+    const hrefs = Array.from(document.querySelectorAll('a[href]')).map((a) =>
+      a.getAttribute('href'),
+    )
+    expect(hrefs.filter((href) => !isAllowedHref(href!))).toEqual([])
+    // The audit is not vacuous: the one allowed external URL is present.
+    const external = hrefs.filter((href) => /^[a-z][a-z0-9+.-]*:/i.test(href!) || href!.startsWith('//'))
+    expect(external).toEqual([LICENSE_URL])
   })
 
   it('keeps the footer when the backend is down', async () => {
