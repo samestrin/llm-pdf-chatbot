@@ -35,6 +35,11 @@ export function suggestionsFor(collection: Collection | undefined): string[] {
   return [...new Set([...names].flatMap((name) => SAMPLE_QUESTIONS[name] ?? []))]
 }
 
+/** The copyright years: one year until the start year is past, then a range. */
+export function copyrightYears(startYear: number, currentYear: number): string {
+  return startYear === currentYear ? `${startYear}` : `${startYear}–${currentYear}`
+}
+
 /** The public demo's notice, the key panel's first line: uploads last `ttlMinutes`. */
 export function publicNotice(ttlMinutes: number | null): string {
   return `Public demo: do not upload private files. ${
@@ -200,6 +205,24 @@ export default function App() {
           </div>
         </div>
       </main>
+      {/* The shell footer: copyright and licence left, the links row right. The
+          licence name is text here; EST-9383 links it to the repo's LICENSE. */}
+      <footer className="app-footer">
+        <div className="app-footer-row">
+          <p className="footer-copy">
+            © {copyrightYears(2025, new Date().getFullYear())} Sam Estrin · MIT License
+          </p>
+          {/* Only pages the app already serves: the API reference. The spec adds
+              no Privacy or Terms page, so those links are omitted. */}
+          <nav aria-label="Footer">
+            <ul className="footer-links">
+              <li>
+                <a href="/api/docs">API</a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 }
