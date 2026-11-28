@@ -444,7 +444,6 @@ describe('DocumentsPanel in a public demo', () => {
   }) {
     const onMissing = overrides?.onMissing ?? vi.fn()
     const demo = {
-      ttlMinutes: 45,
       credentials: overrides?.credentials === undefined ? null : overrides.credentials,
       onMissing,
     }
@@ -466,14 +465,11 @@ describe('DocumentsPanel in a public demo', () => {
   const stubCollections = (body: unknown[] = []) =>
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json(body))))
 
-  it('shows the public notice with the TTL the server gave', async () => {
+  it('leaves the public notice to the key panel: none in the sidebar', async () => {
     stubCollections()
     demoPanel()
-    expect(
-      await screen.findByText(
-        'Public demo: do not upload private files. Uploads are deleted after 45 minutes.',
-      ),
-    ).toBeInTheDocument()
+    await screen.findByText('Uploading needs a demo code or your own key.')
+    expect(screen.queryByText(/Public demo/)).toBeNull()
   })
 
   it('explains that uploading needs a code or key, and opens the panel instead of uploading', async () => {
@@ -609,7 +605,7 @@ describe('DocumentsPanel retry in a public demo', () => {
       <DocumentsPanel
         active={active}
         onActiveChange={noop}
-        demo={{ ttlMinutes: 45, credentials, onMissing }}
+        demo={{ credentials, onMissing }}
       />,
     )
     const input = await screen.findByLabelText('PDF', { selector: 'input' })
@@ -623,7 +619,7 @@ describe('DocumentsPanel retry in a public demo', () => {
       <DocumentsPanel
         active={active}
         onActiveChange={noop}
-        demo={{ ttlMinutes: 45, credentials: null, onMissing }}
+        demo={{ credentials: null, onMissing }}
       />,
     )
     fireEvent.click(retry)
@@ -643,7 +639,7 @@ describe('DocumentsPanel retry in a public demo', () => {
       <DocumentsPanel
         active={active}
         onActiveChange={noop}
-        demo={{ ttlMinutes: 45, credentials: { preset: 'openai', secret: 'sk-k' }, onMissing }}
+        demo={{ credentials: { preset: 'openai', secret: 'sk-k' }, onMissing }}
       />,
     )
     const input = await screen.findByLabelText('PDF', { selector: 'input' })
@@ -657,7 +653,7 @@ describe('DocumentsPanel retry in a public demo', () => {
       <DocumentsPanel
         active={active}
         onActiveChange={noop}
-        demo={{ ttlMinutes: 45, credentials: { preset: 'synthetic', secret: 'sk-s' }, onMissing }}
+        demo={{ credentials: { preset: 'synthetic', secret: 'sk-s' }, onMissing }}
       />,
     )
     fireEvent.click(retry)
@@ -679,7 +675,6 @@ describe('DocumentsPanel drop in a public demo', () => {
         active={{ name: 'default', draft: false }}
         onActiveChange={() => {}}
         demo={{
-          ttlMinutes: 45,
           credentials: { preset: 'synthetic', secret: 'sk-s' },
           onMissing: () => {},
         }}

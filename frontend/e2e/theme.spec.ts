@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, json, test } from './fixtures'
 
 const backgroundOf = (page: import('@playwright/test').Page) =>
   page.evaluate(() => getComputedStyle(document.body).backgroundColor)
@@ -23,6 +23,48 @@ for (const scheme of ['light', 'dark'] as const) {
     ).toBeVisible()
   })
 }
+
+test('the toggle is a 42 px secondary button with 16 px text at the right of the bar', async ({
+  page,
+  api,
+}) => {
+  void api
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/')
+  const toggle = page.locator('.theme-toggle')
+  await expect(toggle).toBeVisible()
+
+  const box = (await toggle.boundingBox())!
+  expect(box.height).toBe(42)
+  const look = await toggle.evaluate((el) => {
+    const s = getComputedStyle(el)
+    return { fontSize: s.fontSize, background: s.backgroundColor, color: s.color }
+  })
+  expect(look.fontSize).toBe('16px')
+  // Secondary: outlined on the surface, not the solid primary fill.
+  const shell = await page.evaluate(() => ({
+    surface: getComputedStyle(document.querySelector('.app-header')!).backgroundColor,
+    text: getComputedStyle(document.body).color,
+  }))
+  expect(look.background).toBe(shell.surface)
+  expect(look.color).toBe(shell.text)
+
+  // At the right of the bar: its right edge sits one bar gutter (1rem) from the row's.
+  const bar = (await page.locator('header .app-bar').boundingBox())!
+  expect(Math.abs(bar.x + bar.width - (box.x + box.width) - 16)).toBeLessThanOrEqual(1)
+
+  // Sizing did not break the job: a click still flips data-theme, both ways.
+  await toggle.click()
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+  await toggle.click()
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+
+  // The size holds on a phone, where the bar wraps.
+  await page.setViewportSize({ width: 360, height: 800 })
+  expect((await toggle.boundingBox())!.height).toBe(42)
+  expect(await toggle.evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
+})
 
 test('the colours follow the system scheme', async ({ page, api }) => {
   void api
@@ -97,19 +139,30 @@ test('a saved light choice beats a dark system scheme after a reload', async ({ 
   await expect(toggle).toHaveText('Dark theme')
 })
 
+// The primary and disabled fills of theme.css, as the browser computes them.
+const PRIMARY_FILL = { light: 'rgb(36, 81, 204)', dark: 'rgb(58, 102, 214)' } as const
+const DISABLED_FILL = { light: 'rgb(228, 231, 236)', dark: 'rgb(42, 47, 56)' } as const
+
 for (const scheme of ['light', 'dark'] as const) {
   test(`in the ${scheme} scheme an enabled Ask looks enabled and a disabled one looks different`, async ({
     page,
     api,
   }) => {
     void api
+    await page.setViewportSize({ width: 1280, height: 800 })
     await page.emulateMedia({ colorScheme: scheme })
     await page.goto('/')
     const ask = page.getByRole('button', { name: 'Ask' })
     const look = () =>
       ask.evaluate((el) => {
         const s = getComputedStyle(el)
-        return { background: s.backgroundColor, color: s.color, opacity: s.opacity, cursor: s.cursor }
+        return {
+          background: s.backgroundColor,
+          color: s.color,
+          opacity: s.opacity,
+          cursor: s.cursor,
+          height: s.height,
+        }
       })
 
     await expect(ask).toBeDisabled()
@@ -127,5 +180,20 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(enabled.cursor).toBe('pointer')
     // The enabled fill is the solid primary: white text on it.
     expect(enabled.color).toBe('rgb(255, 255, 255)')
+    // The shell sizes: a primary is 42 px tall, enabled or disabled, and the
+    // fills are the --color-primary / --color-disabled tokens of this scheme.
+    expect(enabled.height).toBe('42px')
+    expect(disabled.height).toBe('42px')
+    expect(enabled.background).toBe(PRIMARY_FILL[scheme])
+    expect(disabled.background).toBe(DISABLED_FILL[scheme])
   })
 }
+
+test('a small button is 32 px tall on a desktop', async ({ page, api }) => {
+  api.on('GET', '/api/collections', json([{ id: 1, name: 'default', documents: [] }]))
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/')
+  const small = page.getByRole('button', { name: 'Remove empty collection' })
+  await expect(small).toBeVisible()
+  expect(await small.evaluate((el) => getComputedStyle(el).height)).toBe('32px')
+})

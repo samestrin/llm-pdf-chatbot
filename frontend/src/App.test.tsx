@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import App from './App'
+import App, { copyrightYears } from './App'
 
 function stubFetch(response: () => Promise<Response>) {
   const fetch = vi.fn((url: string) =>
@@ -8,6 +8,16 @@ function stubFetch(response: () => Promise<Response>) {
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
+
+describe('copyrightYears', () => {
+  it('shows one year when the start is the current year', () => {
+    expect(copyrightYears(2025, 2025)).toBe('2025')
+  })
+
+  it('shows the range otherwise', () => {
+    expect(copyrightYears(2025, 2026)).toBe('2025–2026')
+  })
+})
 
 describe('App', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -26,15 +36,59 @@ describe('App', () => {
 
     const skip = screen.getByRole('link', { name: 'Skip to chat' })
     const main = screen.getByRole('main')
-    expect(skip).toHaveAttribute('href', `#${main.id}`)
-    expect(main).toHaveAttribute('tabindex', '-1')
+    // The skip link jumps past the bar and the documents panel to the chat, in main.
+    const target = document.getElementById(skip.getAttribute('href')!.slice(1))!
+    expect(main).toContainElement(target)
+    expect(target).toHaveAttribute('tabindex', '-1')
+    expect(within(target).getByRole('region', { name: 'Chat' })).toBeInTheDocument()
     // The skip link is the first thing a keyboard reaches.
     expect(document.body.querySelector('a, button, input, select, textarea')).toBe(skip)
-    expect(within(screen.getByRole('banner')).getByRole('heading', { level: 1 })).toHaveTextContent(
-      'LLM PDF Chatbot',
-    )
+    // The page title and its tagline open main; the bar holds the app name and the nav.
+    expect(within(main).getByRole('heading', { level: 1 })).toHaveTextContent('LLM PDF Chatbot')
+    expect(within(main).getByText(/every answer cites the quote and page/)).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).queryByRole('heading')).toBeNull()
     expect(screen.getByRole('complementary', { name: 'Documents' })).toBeInTheDocument()
     expect(within(main).getByRole('region', { name: 'Chat' })).toBeInTheDocument()
+  })
+
+  it('has a header bar with the logo and name linking home, and a Chat and API nav', () => {
+    stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
+    render(<App />)
+
+    const banner = screen.getByRole('banner')
+    expect(within(banner).getByRole('link', { name: 'PDF Chat' })).toHaveAttribute('href', '/')
+    const nav = within(banner).getByRole('navigation', { name: 'Main' })
+    const links = within(nav).getAllByRole('link')
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['Chat', '/'],
+      ['API', '/api/docs'],
+    ])
+    expect(within(nav).getByRole('link', { name: 'Chat' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'API' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('has the shell footer: the copyright line, MIT License and the API link', () => {
+    stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
+    render(<App />)
+
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).toHaveTextContent(
+      `© 2025–${new Date().getFullYear()} Sam Estrin · MIT License`,
+    )
+    const nav = within(footer).getByRole('navigation', { name: 'Footer' })
+    const links = within(nav).getAllByRole('link')
+    // Only pages the app already serves: no Privacy or Terms page exists.
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['API', '/api/docs']])
+  })
+
+  it('keeps the footer when the backend is down', async () => {
+    stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
+    render(<App />)
+    await screen.findByText('Backend is down')
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Sam Estrin')
+    expect(
+      within(screen.getByRole('contentinfo')).getByRole('link', { name: 'API' }),
+    ).toHaveAttribute('href', '/api/docs')
   })
 
   it('asks the backend for its health at same-origin /api/health, and says nothing when it is up', async () => {
@@ -56,9 +110,11 @@ describe('App', () => {
   it('shows the backend as down when the request fails, with no Retry button', async () => {
     stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
     render(<App />)
-    const banner = screen.getByRole('banner')
-    expect(await within(banner).findByRole('status')).toHaveTextContent('Backend is down')
-    expect(within(banner).queryByRole('button', { name: 'Retry' })).toBeNull()
+    // The bar holds the name and nav only; the page says the backend is down in main.
+    const main = screen.getByRole('main')
+    expect(await within(main).findByRole('status')).toHaveTextContent('Backend is down')
+    expect(within(main).queryByRole('button', { name: 'Retry' })).toBeNull()
+    expect(screen.getByRole('banner')).not.toHaveTextContent('Backend')
   })
 
   it('tells the chat while documents load, and when none exist', async () => {

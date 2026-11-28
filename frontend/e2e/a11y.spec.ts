@@ -119,6 +119,18 @@ for (const scheme of ['light', 'dark'] as const) {
   })
 }
 
+test('below 48rem a small button is a 44 px touch target', async ({ page, api }) => {
+  api.on('GET', '/api/collections', json([{ id: 1, name: 'default', documents: [] }]))
+  await page.setViewportSize({ width: 360, height: 800 })
+  await page.goto('/')
+  const small = page.getByRole('button', { name: 'Remove empty collection' })
+  await expect(small).toBeVisible()
+  expect((await small.boundingBox())!.height).toBe(44)
+  // Still a small button's look, and still a clean page for axe.
+  expect(await small.evaluate((el) => getComputedStyle(el).fontSize)).toBe('14px')
+  expect(await seriousViolations(page)).toEqual([])
+})
+
 test('with reduced motion asked for, nothing animates', async ({ page, api }) => {
   let release!: () => void
   const gate = new Promise<void>((r) => (release = r))

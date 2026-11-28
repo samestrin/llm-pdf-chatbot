@@ -142,10 +142,9 @@ export default function DocumentsPanel({
   onLoadError?: (message: string | null) => void
   /** Open a document in the viewer; `from` is the control that asked, for focus on close. */
   onView?: (doc: DocumentInfo, from: HTMLElement) => void
-  /** Present in a public demo: the notice's TTL, the visitor's credentials, and what to
-   * do when none are saved (the page opens the key panel). */
+  /** Present in a public demo: the visitor's credentials, and what to do when none are
+   * saved (the page sends the visitor to the key panel). */
   demo?: {
-    ttlMinutes: number | null
     credentials: ModelCredentials | null
     onMissing: () => void
   }
@@ -340,14 +339,6 @@ export default function DocumentsPanel({
       onDrop={onDrop}
     >
       <h2 id="documents-heading">Documents</h2>
-      {demo && (
-        <p className="demo-notice">
-          Public demo: do not upload private files.{' '}
-          {demo.ttlMinutes !== null
-            ? `Uploads are deleted after ${demo.ttlMinutes} minutes.`
-            : 'Uploads are deleted automatically.'}
-        </p>
-      )}
       <div className="upload-form">
         <CollectionPicker
           names={collections.map((c) => c.name)}

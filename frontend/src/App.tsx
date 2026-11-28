@@ -35,6 +35,20 @@ export function suggestionsFor(collection: Collection | undefined): string[] {
   return [...new Set([...names].flatMap((name) => SAMPLE_QUESTIONS[name] ?? []))]
 }
 
+/** The copyright years: one year until the start year is past, then a range. */
+export function copyrightYears(startYear: number, currentYear: number): string {
+  return startYear === currentYear ? `${startYear}` : `${startYear}–${currentYear}`
+}
+
+/** The public demo's notice, the key panel's first line: uploads last `ttlMinutes`. */
+export function publicNotice(ttlMinutes: number | null): string {
+  return `Public demo: do not upload private files. ${
+    ttlMinutes !== null
+      ? `Uploads are deleted after ${ttlMinutes} minutes.`
+      : 'Uploads are deleted automatically.'
+  }`
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | 'checking'>('checking')
   // `null` until the documents panel first loads them.
@@ -46,7 +60,8 @@ export default function App() {
   // does not answer it (then the page works as it always did, without credentials).
   const [presetList, setPresetList] = useState<PresetList | null>(null)
   const [creds, setCreds] = useState<StoredCredentials | null>(() => loadCredentials())
-  const [panelOpen, setPanelOpen] = useState(false)
+  // The key panel's field: with no key, asking or uploading sends the visitor there.
+  const keyField = useRef<HTMLInputElement>(null)
   // The open PDF viewer, and the control that opened it, so closing puts focus back there.
   const [viewing, setViewing] = useState<Viewing | null>(null)
   const opener = useRef<HTMLElement | null>(null)
@@ -59,10 +74,14 @@ export default function App() {
     opener.current?.focus()
   }, [])
   const demo = presetList?.public_demo === true
-  const preset = demo ? (presetList?.presets.find((p) => p.id === creds?.preset) ?? null) : null
   // Only the active preset's own key goes to a model call, never another preset's.
   const credentials = activeCredentials(creds)
-  const openPanel = useCallback(() => setPanelOpen(true), [])
+  // Scroll the whole open panel into view, its notice first, then focus the field.
+  const toKeyField = useCallback(() => {
+    const field = keyField.current
+    field?.closest('.key-panel')?.scrollIntoView?.({ block: 'start' })
+    field?.focus({ preventScroll: true })
+  }, [])
   const onCollections = useCallback(
     (loaded: Collection[]) => {
       setCollections(loaded)
@@ -79,9 +98,10 @@ export default function App() {
   }, [])
 
   function onSaveKey(credentials: PresetKeys, remember: boolean) {
-    saveCredentials(credentials, remember)
+    // No key left to keep: nothing is stored, as after Clear.
+    if (Object.keys(credentials.keys).length > 0) saveCredentials(credentials, remember)
+    else clearCredentials()
     setCreds({ ...credentials, remember })
-    setPanelOpen(false)
   }
 
   function onClearKey() {
@@ -100,83 +120,109 @@ export default function App() {
   const suggestions = suggestionsFor(collections?.find((c) => c.name === activeName))
 
   return (
-    <div className="app">
-      <a className="skip-link" href="#main">
+    <div className="app-shell">
+      <a className="skip-link" href="#chat">
         Skip to chat
       </a>
-      <header className="app-bar">
-        <h1 className="app-title">
-          <LogoMark />
-          LLM PDF Chatbot
-        </h1>
-        {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
-        <div className="backend-status">
-          <p role="status">{down ? 'Backend is down' : ''}</p>
+      <header className="app-header">
+        <div className="app-bar">
+          <a className="app-title" href="/">
+            <LogoMark />
+            PDF Chat
+          </a>
+          <nav className="app-nav" aria-label="Main">
+            <a href="/" aria-current="page">
+              Chat
+            </a>
+            <a href="/api/docs">API</a>
+          </nav>
+          <div className="app-bar-actions">
+            <ThemeToggle />
+          </div>
         </div>
-        {demo && (
-          <button
-            type="button"
-            className="secondary small key-toggle"
-            aria-expanded={panelOpen}
-            onClick={() => setPanelOpen((open) => !open)}
-          >
-            {creds ? `Model key: ${preset?.label ?? creds.preset}` : 'Add a key or demo code'}
-          </button>
-        )}
-        <ThemeToggle />
       </header>
-      {demo && panelOpen && presetList && (
-        <KeyPanel
-          presets={presetList.presets}
-          embeddingModel={presetList.embedding_model ?? null}
-          stored={creds}
-          onSave={onSaveKey}
-          onClear={onClearKey}
-          onClose={() => setPanelOpen(false)}
-        />
-      )}
-      <div className="app-layout">
-        <DocumentsPanel
-          active={active}
-          onActiveChange={setActive}
-          onCollections={onCollections}
-          onLoadError={onLoadError}
-          onView={(doc, from) =>
-            openViewer({ document: { id: doc.id, filename: doc.filename }, page: 1 }, from)
-          }
-          demo={
-            demo && presetList
-              ? {
-                  ttlMinutes: presetList.upload_ttl_minutes,
-                  credentials,
-                  onMissing: openPanel,
+      <main id="main" className="app">
+        <div className="app-content">
+          <div className="app-heading">
+            <h1>LLM PDF Chatbot</h1>
+            <p className="tagline">
+              Chat with your own PDFs and get answers you can check: every answer cites the quote
+              and page it came from.
+            </p>
+          </div>
+          {demo && presetList && (
+            <KeyPanel
+              presets={presetList.presets}
+              notice={publicNotice(presetList.upload_ttl_minutes)}
+              embeddingModel={presetList.embedding_model ?? null}
+              stored={creds}
+              onSave={onSaveKey}
+              onClear={onClearKey}
+              fieldRef={keyField}
+            />
+          )}
+          {/* Only a backend that is down is worth a word; a healthy one says nothing. */}
+          <p role="status" className="backend-status">
+            {down ? 'Backend is down' : ''}
+          </p>
+          <div className="app-layout">
+            <DocumentsPanel
+              active={active}
+              onActiveChange={setActive}
+              onCollections={onCollections}
+              onLoadError={onLoadError}
+              onView={(doc, from) =>
+                openViewer({ document: { id: doc.id, filename: doc.filename }, page: 1 }, from)
+              }
+              demo={
+                demo && presetList
+                  ? { credentials, onMissing: toKeyField }
+                  : undefined
+              }
+            />
+            <div id="chat" className="chat-column" tabIndex={-1}>
+              <Chat
+                collection={activeName}
+                loading={collections === null && !loadFailed}
+                empty={collections !== null && collections.every((c) => c.documents.length === 0)}
+                ingesting={ingesting}
+                modelAccess={demo ? { credentials, onMissing: toKeyField } : undefined}
+                suggestions={suggestions}
+                onOpen={openViewer}
+                viewer={
+                  viewing && (
+                    <Suspense fallback={<p>Opening the PDF viewer…</p>}>
+                      <PdfViewer
+                        key={`${viewing.document.id}:${viewing.page}:${viewing.quote ?? ''}`}
+                        citation={viewing}
+                        onClose={closeViewer}
+                      />
+                    </Suspense>
+                  )
                 }
-              : undefined
-          }
-        />
-        <main id="main" tabIndex={-1}>
-          <Chat
-            collection={activeName}
-            loading={collections === null && !loadFailed}
-            empty={collections !== null && collections.every((c) => c.documents.length === 0)}
-            ingesting={ingesting}
-            modelAccess={demo ? { credentials, onMissing: openPanel } : undefined}
-            suggestions={suggestions}
-            onOpen={openViewer}
-            viewer={
-              viewing && (
-                <Suspense fallback={<p>Opening the PDF viewer…</p>}>
-                  <PdfViewer
-                    key={`${viewing.document.id}:${viewing.page}:${viewing.quote ?? ''}`}
-                    citation={viewing}
-                    onClose={closeViewer}
-                  />
-                </Suspense>
-              )
-            }
-          />
-        </main>
-      </div>
+              />
+            </div>
+          </div>
+        </div>
+      </main>
+      {/* The shell footer: copyright and licence left, the links row right. The
+          licence name is text here; EST-9383 links it to the repo's LICENSE. */}
+      <footer className="app-footer">
+        <div className="app-footer-row">
+          <p className="footer-copy">
+            © {copyrightYears(2025, new Date().getFullYear())} Sam Estrin · MIT License
+          </p>
+          {/* Only pages the app already serves: the API reference. The spec adds
+              no Privacy or Terms page, so those links are omitted. */}
+          <nav aria-label="Footer">
+            <ul className="footer-links">
+              <li>
+                <a href="/api/docs">API</a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 }

@@ -15,11 +15,11 @@ Open <http://localhost:8080> (`FRONTEND_PORT`) once the stack is up.
 - Before any document is uploaded, both the panel and the chat say what to do first: upload a PDF, then ask about it.
 - A document still queued or being read shows its progress and a note that it can be asked about once it is ready, and the chat names the documents of the active collection that answers still leave out.
 - A failed load or upload shows the reason with a Retry button; Retry upload sends the same file to the same collection again.
-- The header says nothing about the backend while it is up; when the health check fails it says "Backend is down".
+- The page says nothing about the backend while it is up; when the health check fails it says "Backend is down" under the page title.
 
 ## Asking
 
-When the active collection holds the sample PDF, a few questions it answers show as chips above the question box (from `frontend/public/samples/questions.json`); clicking one asks it. In a public demo with no key or code saved, the click puts the question in the box and opens the key panel.
+When the active collection holds the sample PDF, a few questions it answers show as chips above the question box (from `frontend/public/samples/questions.json`); clicking one asks it. In a public demo with no key or code saved, the click puts the question in the box and moves the focus to the key field of the **Model access** panel at the top of the page.
 
 Type a question and press **Ask** (or Enter; Shift+Enter starts a new line). The question is asked in the active collection. The answer streams in under a short line that says where it was found, and every claim carries a citation chip with the page it came from.
 
@@ -44,14 +44,14 @@ Each claim has a citation chip with its page (`p. 3`). The chip's tooltip is its
 
 ## Themes and layout
 
-The page follows the system light or dark scheme (`prefers-color-scheme`). The theme button in the header overrides it: it reads "Dark theme" in the light theme and "Light theme" in the dark one. The choice is saved in `localStorage` (key `theme`) and kept on reload. The colours, type sizes, spacing, radii, shadows and focus ring all come from one set of design tokens in `frontend/src/theme.css`, and text passes WCAG AA contrast in both themes.
+The page follows the system light or dark scheme (`prefers-color-scheme`). The theme button in the header overrides it: it reads "Dark theme" in the light theme and "Light theme" in the dark one. The choice is saved in `localStorage` (key `theme`) and kept on reload. The colours, type sizes, spacing, radii, shadows and focus ring all come from one set of design tokens in `frontend/src/theme.css`, and text passes WCAG AA contrast in both themes. `frontend/src/theme.test.ts` pins the shared tokens to the demo shell spec table and fails on any spacing value written outside the tokens.
 
-The page fits 360 px phones to desktops without sideways scrolling: on a desktop the documents panel sits beside the chat; on a phone it stacks above it, the question box stays at the bottom of the screen and the PDF viewer fills the screen.
+The page fits 360 px phones to desktops without sideways scrolling: on a desktop the documents panel sits beside the chat; on a phone it stacks above it, the question box stays at the bottom of the screen and the PDF viewer fills the screen. Every page ends with a footer: the copyright line `© 2025–<year> Sam Estrin · MIT License` and a `Footer` nav with the **API** link (`/api/docs`) — one row from 768 px up, a centred column below it.
 
 ![The page at phone width](img/phone.png)
 
 ## Keyboard and screen readers
 
-The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a header, a documents sidebar (`aside`) and the chat in `main`. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
+The page works from the keyboard alone. The first Tab reaches a "Skip to chat" link. The page has a sticky header bar (the logo and name `PDF Chat`, a `Main` nav with `Chat` and `API` from 768 px up, and the theme button), then `main` with the page title, in a public demo the open `Model access` key panel, the documents sidebar (`aside`) and the chat, and a footer with the copyright line and the `Footer` nav. The content is at most 76rem (1216 px) wide. Enter asks the question and Shift+Enter starts a new line. A streamed answer is read out as it arrives (`aria-live="polite"`). A citation opens the viewer with focus inside it. Tab and Shift+Tab stay in the viewer, and Escape closes it and returns focus to the chip, or to the document name it was opened from. Every control shows the focus ring, and with `prefers-reduced-motion: reduce` nothing animates.
 
 `frontend/e2e/a11y.spec.ts` runs axe over the empty, loaded-chat and viewer-open screens in both themes and fails on any serious or critical violation. It also runs a keyboard-only upload, ask, open and close.
