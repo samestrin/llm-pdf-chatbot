@@ -129,6 +129,12 @@ for (const width of [375, 1600] as const) {
     await expect(footer).toContainText(
       `© 2025–${new Date().getFullYear()} Sam Estrin · MIT License`,
     )
+    // The licence name links to the repo's LICENSE on GitHub (the only external
+    // URL allowed in the page); the file is not packaged or served.
+    await expect(footer.getByRole('link', { name: 'MIT License' })).toHaveAttribute(
+      'href',
+      'https://github.com/samestrin/llm-pdf-chatbot/blob/main/LICENSE',
+    )
     const nav = footer.getByRole('navigation', { name: 'Footer' })
     // Only pages the app already serves: the API reference, no Privacy or Terms.
     await expect(nav.getByRole('link')).toHaveCount(1)
