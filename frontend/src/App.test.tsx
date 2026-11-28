@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import App from './App'
+import App, { copyrightYears } from './App'
 
 function stubFetch(response: () => Promise<Response>) {
   const fetch = vi.fn((url: string) =>
@@ -8,6 +8,16 @@ function stubFetch(response: () => Promise<Response>) {
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
+
+describe('copyrightYears', () => {
+  it('shows one year when the start is the current year', () => {
+    expect(copyrightYears(2025, 2025)).toBe('2025')
+  })
+
+  it('shows the range otherwise', () => {
+    expect(copyrightYears(2025, 2026)).toBe('2025–2026')
+  })
+})
 
 describe('App', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -55,6 +65,30 @@ describe('App', () => {
     ])
     expect(within(nav).getByRole('link', { name: 'Chat' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'API' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('has the shell footer: the copyright line, MIT License and the API link', () => {
+    stubFetch(() => Promise.resolve(Response.json({ status: 'ok' })))
+    render(<App />)
+
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).toHaveTextContent(
+      `© 2025–${new Date().getFullYear()} Sam Estrin · MIT License`,
+    )
+    const nav = within(footer).getByRole('navigation', { name: 'Footer' })
+    const links = within(nav).getAllByRole('link')
+    // Only pages the app already serves: no Privacy or Terms page exists.
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['API', '/api/docs']])
+  })
+
+  it('keeps the footer when the backend is down', async () => {
+    stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
+    render(<App />)
+    await screen.findByText('Backend is down')
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Sam Estrin')
+    expect(
+      within(screen.getByRole('contentinfo')).getByRole('link', { name: 'API' }),
+    ).toHaveAttribute('href', '/api/docs')
   })
 
   it('asks the backend for its health at same-origin /api/health, and says nothing when it is up', async () => {
