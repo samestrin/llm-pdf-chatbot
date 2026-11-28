@@ -289,6 +289,23 @@ describe('App in a public demo', () => {
     expect(fetch.mock.calls.filter(([url]) => url.includes('/documents'))).toEqual([])
   })
 
+  it('the upload prompt brings the open key panel into view, not just its field', async () => {
+    stubDemoFetch()
+    const scrolled: Element[] = []
+    Element.prototype.scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this)
+    })
+    try {
+      render(<App />)
+      const documents = await screen.findByRole('complementary', { name: 'Documents' })
+      fireEvent.click(within(documents).getByRole('button', { name: 'Add a key or demo code' }))
+      expect(scrolled).toEqual([screen.getByRole('region', { name: 'Model access' })])
+      expect(screen.getByLabelText('OpenAI API key')).toHaveFocus()
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+  })
+
   it('a preset with no embedding model can upload and ask', async () => {
     const fetch = stubDemoFetch()
     render(<App />)
