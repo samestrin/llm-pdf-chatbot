@@ -46,7 +46,7 @@ Each claim has a citation chip with its page (`p. 3`). The chip's tooltip is its
 
 The page follows the system light or dark scheme (`prefers-color-scheme`). The theme button in the header overrides it: it reads "Dark theme" in the light theme and "Light theme" in the dark one. The choice is saved in `localStorage` (key `theme`) and kept on reload. The colours, type sizes, spacing, radii, shadows and focus ring all come from one set of design tokens in `frontend/src/theme.css`, and text passes WCAG AA contrast in both themes. `frontend/src/theme.test.ts` pins the shared tokens to the demo shell spec table and fails on any spacing value written outside the tokens.
 
-The page fits 360 px phones to desktops without sideways scrolling: on a desktop the documents panel sits beside the chat; on a phone it stacks above it, the question box stays at the bottom of the screen and the PDF viewer fills the screen. Every page ends with a footer: the copyright line `© 2025–<year> Sam Estrin · MIT License` and a `Footer` nav with the **API** link (`/api/docs`) — one row from 768 px up, a centred column below it.
+The page fits 360 px phones to desktops without sideways scrolling: on a desktop the documents panel sits beside the chat; on a phone it stacks above it, the question box stays at the bottom of the screen and the PDF viewer fills the screen. Every page ends with a footer: the copyright line `© 2025–<year> Sam Estrin · MIT License` — where **MIT License** links to the repo's LICENSE on GitHub (`https://github.com/samestrin/llm-pdf-chatbot/blob/main/LICENSE`), the only external URL in the page — and a `Footer` nav with the **API** link (`/api/docs`) — one row from 768 px up, a centred column below it.
 
 ![The page at phone width](img/phone.png)
 

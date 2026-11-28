@@ -206,11 +206,13 @@ export default function App() {
         </div>
       </main>
       {/* The shell footer: copyright and licence left, the links row right. The
-          licence name is text here; EST-9383 links it to the repo's LICENSE. */}
+          licence name links to the repo's LICENSE on GitHub — the only external
+          URL allowed in the page; the file is not packaged or served. */}
       <footer className="app-footer">
         <div className="app-footer-row">
           <p className="footer-copy">
-            © {copyrightYears(2025, new Date().getFullYear())} Sam Estrin · MIT License
+            © {copyrightYears(2025, new Date().getFullYear())} Sam Estrin ·{' '}
+            <a href="https://github.com/samestrin/llm-pdf-chatbot/blob/main/LICENSE">MIT License</a>
           </p>
           {/* Only pages the app already serves: the API reference. The spec adds
               no Privacy or Terms page, so those links are omitted. */}
