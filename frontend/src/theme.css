@@ -464,10 +464,6 @@ label {
 
 /* Public demo: the key panel, its notice and the notes about keys and models */
 
-.key-toggle {
-  min-width: 0;
-}
-
 /* The shell's key panel: the notice, then one row of provider, key field, remember
    and clear, stacked into one full-width column below 48rem. */
 .key-panel {
@@ -475,6 +471,8 @@ label {
   flex-direction: column;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
+  /* Scrolled to from the upload and ask prompts: clear of the 56 px sticky bar. */
+  scroll-margin-top: calc(3.5rem + var(--space-4));
 }
 
 .key-notice {

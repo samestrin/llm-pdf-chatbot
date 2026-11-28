@@ -339,6 +339,26 @@ test('the upload control explains it needs a code or key, and goes to the key fi
   expect(api.calls.filter((c) => c.startsWith('POST /api/collections'))).toEqual([])
 })
 
+test('on a phone the upload prompt scrolls back up to the whole key panel', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 640 })
+  await page.goto('/')
+  const panel = page.getByRole('region', { name: 'Model access' })
+  const prompt = page
+    .getByRole('complementary', { name: 'Documents' })
+    .getByRole('button', { name: 'Add a key or demo code' })
+  await prompt.scrollIntoViewIfNeeded()
+  await expect(panel).not.toBeInViewport()
+  await prompt.click()
+  // The whole panel shows, its notice below the sticky header bar.
+  await expect(async () => {
+    const bar = (await page.getByRole('banner').boundingBox())!
+    const box = (await panel.boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(bar.y + bar.height)
+    expect(box.y + box.height).toBeLessThanOrEqual(640)
+  }).toPass()
+  await expect(page.getByLabel('OpenAI API key')).toBeFocused()
+})
+
 test('the sample PDF needs a code or key too: it goes to the key field, then the upload carries the headers', async ({
   page,
   api,

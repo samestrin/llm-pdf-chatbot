@@ -71,7 +71,12 @@ export default function App() {
   const demo = presetList?.public_demo === true
   // Only the active preset's own key goes to a model call, never another preset's.
   const credentials = activeCredentials(creds)
-  const toKeyField = useCallback(() => keyField.current?.focus(), [])
+  // Scroll the whole open panel into view, its notice first, then focus the field.
+  const toKeyField = useCallback(() => {
+    const field = keyField.current
+    field?.closest('.key-panel')?.scrollIntoView?.({ block: 'start' })
+    field?.focus({ preventScroll: true })
+  }, [])
   const onCollections = useCallback(
     (loaded: Collection[]) => {
       setCollections(loaded)
