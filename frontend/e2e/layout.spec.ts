@@ -113,6 +113,59 @@ test('at 1600 px the header bar and the content are 1216 px wide and the bar is 
   await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible()
 })
 
+// The shell footer (docs/demo-shell.md): copyright and licence left, the links
+// row right from 48rem, a centred column below it, on every page.
+for (const width of [375, 1600] as const) {
+  test(`at ${width} px the footer shows the copyright line and the links row`, async ({
+    page,
+    api,
+  }) => {
+    withContent(api)
+    await page.setViewportSize({ width, height: HEIGHT })
+    await page.goto('/')
+    await expect(page.getByRole('listitem', { name: LONG_NAME })).toBeVisible()
+
+    const footer = page.getByRole('contentinfo')
+    await expect(footer).toContainText(
+      `© 2025–${new Date().getFullYear()} Sam Estrin · MIT License`,
+    )
+    const nav = footer.getByRole('navigation', { name: 'Footer' })
+    // Only pages the app already serves: the API reference, no Privacy or Terms.
+    await expect(nav.getByRole('link')).toHaveCount(1)
+    await expect(nav.getByRole('link', { name: 'API' })).toHaveAttribute('href', '/api/docs')
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0)
+
+    const copy = (await footer.locator('.footer-copy').boundingBox())!
+    const links = (await nav.boundingBox())!
+    if (width === 1600) {
+      // The inner row is --page-max wide like the bar and main, padding inside.
+      const row = (await footer.locator('.app-footer-row').boundingBox())!
+      const content = (await page.locator('main > :first-child').boundingBox())!
+      expect(row.width).toBe(1216)
+      expect(row.x).toBe(content.x)
+      // Copyright left, links right, on one line.
+      expect(copy.x).toBeLessThan(links.x)
+      expect(
+        Math.abs(copy.y + copy.height / 2 - (links.y + links.height / 2)),
+      ).toBeLessThanOrEqual(1)
+    } else {
+      // A centred column: the copyright above the links, both centred.
+      expect(copy.y + copy.height).toBeLessThanOrEqual(links.y)
+      expect(Math.abs(copy.x + copy.width / 2 - width / 2)).toBeLessThanOrEqual(1)
+      expect(Math.abs(links.x + links.width / 2 - width / 2)).toBeLessThanOrEqual(1)
+    }
+  })
+}
+
+test('on a short page the footer sits at the bottom of the viewport', async ({ page }) => {
+  // The default fixtures serve no collections, so the page is short.
+  await page.setViewportSize({ width: 1600, height: HEIGHT })
+  await page.goto('/')
+  await expect(page.getByRole('contentinfo')).toBeVisible()
+  const footer = (await page.getByRole('contentinfo').boundingBox())!
+  expect(Math.abs(footer.y + footer.height - HEIGHT)).toBeLessThanOrEqual(1)
+})
+
 test('the header bar stays at the top while the page scrolls', async ({ page, api }) => {
   withContent(api)
   await page.setViewportSize({ width: 1280, height: 400 })
